@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Voix",
+    "slug": "voix-traduction",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tonnom.voix",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "L'application a besoin du micro pour enregistrer ce que vous dites et le traduire."
+      }
+    },
+    "android": {
+      "package": "com.tonnom.voix",
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Autoriser Voix à utiliser le micro pour traduire ce que vous dites."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}
