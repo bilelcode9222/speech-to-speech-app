@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { setAudioModeAsync } from 'expo-audio';
 
 import { FaceToFaceView } from '../components/FaceToFaceView';
 import { LanguageSelector } from '../components/LanguageSelector';
@@ -70,7 +71,8 @@ export function ConversationScreen() {
       if (!micReady) return;
       try {
         directionRef.current = { from, to };
-        await recorder.prepareToRecordAsync();
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
         recorder.record();
         setRecordingSide(side);
         autoStop.current = setTimeout(() => stopRecording(), MAX_RECORDING_MS);
