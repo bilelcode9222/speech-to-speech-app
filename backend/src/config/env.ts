@@ -3,43 +3,62 @@ import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-function requireEnv(key: string): string {
-  const value = process.env[key];
-  if (!value || value.trim() === '' || value.startsWith('remplace') || value.startsWith('gsk_remplace')) {
-    throw new Error(
-      `Clé manquante ou non remplie : ${key}\n` +
-      `   Ouvre le fichier backend/.env et remplace la valeur par ta vraie clé.`
-    );
-  }
-  return value;
-}
-
-/** Variable optionnelle : renvoie une chaîne vide plutôt que de planter */
 function optionalEnv(key: string): string {
   const value = process.env[key];
   if (!value || value.startsWith('remplace')) return '';
   return value;
 }
 
+function requireEnv(key: string): string {
+  const value = optionalEnv(key);
+  if (!value.trim()) {
+    throw new Error(
+      `Clé manquante ou non remplie : ${key}\n` +
+      `   Ajoute-la dans backend/.env (ou dans les variables Render).`
+    );
+  }
+  return value;
+}
+
 /**
- * 'device'     : la voix est prononcée par l'iPhone (expo-speech).
- *                Gratuit, illimité, hors ligne, aucune clé requise.
- * 'elevenlabs' : voix haute qualité, mais quota payant.
+ * 'gemini' : un seul fournisseur. Transcription + traduction en un appel,
+ *            puis voix Gemini. Deux appels au total.
+ * 'groq'   : ancienne chaîne Whisper -> LLM -> ElevenLabs (ou voix iPhone).
  */
-const ttsProvider = (process.env.TTS_PROVIDER || 'device') as 'device' | 'elevenlabs';
+const provider = (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'groq';
+
+/**
+ * 'gemini'     : voix Gemini, naturelle, 70 langues.
+ * 'device'     : voix de l'iPhone. Gratuite, illimitée, hors ligne.
+ * 'elevenlabs' : voix premium, quota payant.
+ */
+const ttsProvider = (process.env.TTS_PROVIDER || 'gemini') as
+  | 'gemini'
+  | 'device'
+  | 'elevenlabs';
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
+  provider,
   ttsProvider,
 
+  gemini: {
+    apiKey: provider === 'gemini' ? requireEnv('GEMINI_API_KEY') : optionalEnv('GEMINI_API_KEY'),
+    // Modèle multimodal qui accepte l'audio en entrée.
+    // Vérifie le nom exact avec la commande donnée dans MIGRATION.md.
+    model: process.env.GEMINI_MODEL || 'gemini-3-flash',
+    ttsModel: process.env.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview',
+    // 30 voix disponibles : Kore, Puck, Charon, Aoede, Fenrir, Leda...
+    voice: process.env.GEMINI_VOICE || 'Kore',
+  },
+
   groq: {
-    apiKey: requireEnv('GROQ_API_KEY'),
+    apiKey: provider === 'groq' ? requireEnv('GROQ_API_KEY') : optionalEnv('GROQ_API_KEY'),
     sttModel: 'whisper-large-v3-turbo',
     llmModel: 'openai/gpt-oss-20b',
   },
 
   elevenLabs: {
-    // Obligatoire uniquement si TTS_PROVIDER=elevenlabs
     apiKey:
       ttsProvider === 'elevenlabs'
         ? requireEnv('ELEVENLABS_API_KEY')

@@ -19,6 +19,7 @@ export interface PipelineResult {
   originalText: string;
   translatedText: string;
   audioBase64: string;
+  audioFormat?: 'wav' | 'mp3';
   timings: { stt: number; translation: number; tts: number; total: number };
 }
 

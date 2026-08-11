@@ -1,6 +1,7 @@
 import { transcribeAudio } from '../services/sttService';
 import { translateText } from '../services/translationService';
 import { synthesizeSpeech } from '../services/ttsService';
+import { translateAudio, synthesizeSpeechGemini } from '../services/geminiService';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { isSupported } from '../utils/languages';
@@ -20,35 +21,64 @@ export async function runSpeechPipeline(
   validate(request);
 
   logger.info(
-    `Pipeline ${request.requestId} : ${request.sourceLanguage} -> ${request.targetLanguage}`
+    `Pipeline ${request.requestId} : ${request.sourceLanguage} -> ${request.targetLanguage} (${config.provider})`
   );
 
-  // 1. Transcription
-  const stt = await transcribeAudio(
-    request.audioBase64,
-    request.audioFormat,
-    request.sourceLanguage
-  );
-  hooks.onTranscription?.(stt.text);
+  let originalText: string;
+  let translatedText: string;
+  let sttMs = 0;
+  let translationMs = 0;
 
-  // 2. Traduction
-  const translation = await translateText(
-    stt.text,
-    request.sourceLanguage,
-    request.targetLanguage
-  );
-  hooks.onTranslation?.(translation.translatedText);
+  if (config.provider === 'gemini') {
+    // Un seul appel : l'audio entre, les deux textes sortent
+    const result = await translateAudio(
+      request.audioBase64,
+      request.audioFormat,
+      request.sourceLanguage,
+      request.targetLanguage
+    );
+    originalText = result.originalText;
+    translatedText = result.translatedText;
+    // Les deux étapes sont fusionnées : on attribue la durée à la traduction
+    translationMs = result.durationMs;
 
-  // 3. Synthèse vocale — sautée quand c'est l'iPhone qui parle.
-  //    On économise ainsi un appel réseau et le transfert du MP3 :
-  //    la latence baisse en même temps que le coût.
+    hooks.onTranscription?.(originalText);
+    hooks.onTranslation?.(translatedText);
+  } else {
+    const stt = await transcribeAudio(
+      request.audioBase64,
+      request.audioFormat,
+      request.sourceLanguage
+    );
+    originalText = stt.text;
+    sttMs = stt.durationMs;
+    hooks.onTranscription?.(originalText);
+
+    const translation = await translateText(
+      originalText,
+      request.sourceLanguage,
+      request.targetLanguage
+    );
+    translatedText = translation.translatedText;
+    translationMs = translation.durationMs;
+    hooks.onTranslation?.(translatedText);
+  }
+
+  // Synthèse vocale — sautée si c'est l'iPhone qui parle
   let audioBase64 = '';
-  let ttsDuration = 0;
+  let audioFormat: 'wav' | 'mp3' = 'mp3';
+  let ttsMs = 0;
 
-  if (config.ttsProvider === 'elevenlabs') {
-    const tts = await synthesizeSpeech(translation.translatedText);
+  if (config.ttsProvider === 'gemini') {
+    const tts = await synthesizeSpeechGemini(translatedText);
     audioBase64 = tts.audioBase64;
-    ttsDuration = tts.durationMs;
+    audioFormat = 'wav';
+    ttsMs = tts.durationMs;
+  } else if (config.ttsProvider === 'elevenlabs') {
+    const tts = await synthesizeSpeech(translatedText);
+    audioBase64 = tts.audioBase64;
+    audioFormat = 'mp3';
+    ttsMs = tts.durationMs;
   }
 
   const total = Date.now() - totalStart;
@@ -56,15 +86,11 @@ export async function runSpeechPipeline(
 
   return {
     requestId: request.requestId,
-    originalText: stt.text,
-    translatedText: translation.translatedText,
+    originalText,
+    translatedText,
     audioBase64,
-    timings: {
-      stt: stt.durationMs,
-      translation: translation.durationMs,
-      tts: ttsDuration,
-      total,
-    },
+    audioFormat,
+    timings: { stt: sttMs, translation: translationMs, tts: ttsMs, total },
   };
 }
 

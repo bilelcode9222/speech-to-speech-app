@@ -8,13 +8,6 @@ import { PipelineErrorPayload, PipelineResult, SOCKET_EVENTS } from '../types';
 /** Pause avant la lecture, pour laisser le temps de lire la traduction */
 const DELAI_AVANT_VOIX_MS = 800;
 
-/**
- * Branche les événements du serveur sur le store.
- *
- * L'ordre d'arrivée reproduit le pipeline : le texte transcrit apparaît en
- * premier, puis la traduction, puis la voix. On voit donc quelque chose bien
- * avant la fin du traitement.
- */
 export function useTranslationSocket(): void {
   const { updateExchange, setConnected } = useAppStore();
 
@@ -40,15 +33,13 @@ export function useTranslationSocket(): void {
         status: 'done',
       });
 
-      // Laisse le temps de lire avant que la voix ne démarre
       await new Promise((r) => setTimeout(r, DELAI_AVANT_VOIX_MS));
 
       try {
         if (result.audioBase64) {
-          // Le serveur a fourni un MP3 (ElevenLabs)
-          await playBase64Audio(result.audioBase64);
+          await playBase64Audio(result.audioBase64, result.audioFormat || 'mp3');
         } else {
-          // Pas d'audio : c'est l'iPhone qui prononce
+          // Pas d'audio renvoyé : c'est l'iPhone qui prononce
           const exchange = useAppStore
             .getState()
             .exchanges.find((e) => e.id === result.requestId);
