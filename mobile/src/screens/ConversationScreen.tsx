@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FaceToFaceView } from '../components/FaceToFaceView';
 import { LanguageSelector } from '../components/LanguageSelector';
 import { RecordButton } from '../components/RecordButton';
 import { TranscriptBubble } from '../components/TranscriptBubble';
@@ -19,15 +20,21 @@ import { useTheme } from '../theme/ThemeProvider';
 import { Palette, spacing, type } from '../theme/tokens';
 import { SOCKET_EVENTS } from '../types';
 
+/** Quelle moitié de l'écran a lancé l'enregistrement en mode face-à-face */
+type Side = 'top' | 'bottom';
+
 export function ConversationScreen() {
   const { colors, name: themeName, toggle } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const recorder = useRecorder();
-  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSide, setRecordingSide] = useState<Side | null>(null);
   const [micReady, setMicReady] = useState(false);
+  const [faceToFace, setFaceToFace] = useState(false);
   const autoStop = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyToggling = useRef(false);
+  // Mémorise le sens de la phrase en cours, pour l'attribuer à l'échange
+  const directionRef = useRef<{ from: string; to: string } | null>(null);
 
   const {
     sourceLanguage,
@@ -55,28 +62,35 @@ export function ConversationScreen() {
     });
   }, []);
 
+  const isRecording = recordingSide !== null;
   const isBusy = exchanges.some((e) => e.status !== 'done' && e.status !== 'error');
 
-  const startRecording = useCallback(async () => {
-    if (!micReady) return;
-    try {
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setIsRecording(true);
-      autoStop.current = setTimeout(() => stopRecording(), MAX_RECORDING_MS);
-    } catch (error) {
-      console.log('[record] démarrage impossible', error);
-      Alert.alert('Micro indisponible', "L'enregistrement n'a pas pu démarrer.");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micReady, recorder]);
+  const startRecording = useCallback(
+    async (side: Side, from: string, to: string) => {
+      if (!micReady) return;
+      try {
+        directionRef.current = { from, to };
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+        setRecordingSide(side);
+        autoStop.current = setTimeout(() => stopRecording(), MAX_RECORDING_MS);
+      } catch (error) {
+        console.log('[record] démarrage impossible', error);
+        Alert.alert('Micro indisponible', "L'enregistrement n'a pas pu démarrer.");
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [micReady, recorder]
+  );
 
   const stopRecording = useCallback(async () => {
     if (autoStop.current) {
       clearTimeout(autoStop.current);
       autoStop.current = null;
     }
-    setIsRecording(false);
+    setRecordingSide(null);
+
+    const direction = directionRef.current || { from: sourceLanguage, to: targetLanguage };
 
     try {
       await recorder.stop();
@@ -87,8 +101,8 @@ export function ConversationScreen() {
 
       addExchange({
         id: requestId,
-        sourceLanguage,
-        targetLanguage,
+        sourceLanguage: direction.from,
+        targetLanguage: direction.to,
         originalText: null,
         translatedText: null,
         status: 'transcribing',
@@ -109,26 +123,31 @@ export function ConversationScreen() {
         requestId,
         audioBase64,
         audioFormat: formatFromUri(uri),
-        sourceLanguage,
-        targetLanguage,
+        sourceLanguage: direction.from,
+        targetLanguage: direction.to,
       });
     } catch (error) {
       console.log('[record] arrêt impossible', error);
     }
   }, [recorder, sourceLanguage, targetLanguage, addExchange, updateExchange]);
 
-  const toggleRecording = useCallback(async () => {
-    if (busyToggling.current) return;
-    busyToggling.current = true;
-    try {
-      if (isRecording) await stopRecording();
-      else await startRecording();
-    } finally {
-      setTimeout(() => {
-        busyToggling.current = false;
-      }, 300);
-    }
-  }, [isRecording, startRecording, stopRecording]);
+  const toggleRecording = useCallback(
+    async (side: Side, from: string, to: string) => {
+      if (busyToggling.current) return;
+      busyToggling.current = true;
+      try {
+        if (isRecording) await stopRecording();
+        else await startRecording(side, from, to);
+      } finally {
+        setTimeout(() => {
+          busyToggling.current = false;
+        }, 300);
+      }
+    },
+    [isRecording, startRecording, stopRecording]
+  );
+
+  const latest = exchanges[0] || null;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
@@ -148,17 +167,35 @@ export function ConversationScreen() {
           </View>
         </View>
 
-        <Pressable
-          onPress={toggle}
-          hitSlop={10}
-          style={styles.themeButton}
-          accessibilityRole="button"
-          accessibilityLabel={
-            themeName === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'
-          }
-        >
-          <Text style={styles.themeIcon}>{themeName === 'dark' ? '☀' : '☾'}</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => setFaceToFace((v) => !v)}
+            hitSlop={10}
+            style={[styles.iconButton, faceToFace && styles.iconButtonActive]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              faceToFace ? 'Quitter le mode face à face' : 'Mode face à face'
+            }
+          >
+            <Text
+              style={[styles.icon, faceToFace && { color: colors.background }]}
+            >
+              ⇅
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={toggle}
+            hitSlop={10}
+            style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel={
+              themeName === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'
+            }
+          >
+            <Text style={styles.icon}>{themeName === 'dark' ? '☀' : '☾'}</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.selector}>
@@ -172,26 +209,44 @@ export function ConversationScreen() {
         />
       </View>
 
-      {exchanges.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyBody}>
-            Touche le bouton, dis une phrase, touche à nouveau.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-          data={exchanges}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <TranscriptBubble exchange={item} />}
-          showsVerticalScrollIndicator={false}
+      {faceToFace ? (
+        <FaceToFaceView
+          exchange={latest}
+          sourceLanguage={sourceLanguage}
+          targetLanguage={targetLanguage}
+          recordingSide={recordingSide}
+          isBusy={isBusy}
+          onToggleTop={() => toggleRecording('top', targetLanguage, sourceLanguage)}
+          onToggleBottom={() => toggleRecording('bottom', sourceLanguage, targetLanguage)}
         />
-      )}
+      ) : (
+        <>
+          {exchanges.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyBody}>
+                Touche le bouton, dis une phrase, touche à nouveau.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+              data={exchanges}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <TranscriptBubble exchange={item} />}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
 
-      <View style={styles.footer}>
-        <RecordButton isRecording={isRecording} isBusy={isBusy} onToggle={toggleRecording} />
-      </View>
+          <View style={styles.footer}>
+            <RecordButton
+              isRecording={isRecording}
+              isBusy={isBusy}
+              onToggle={() => toggleRecording('bottom', sourceLanguage, targetLanguage)}
+            />
+          </View>
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -212,7 +267,8 @@ function createStyles(colors: Palette) {
     statusDot: { width: 5, height: 5, borderRadius: 3 },
     statusText: { fontSize: 12, color: colors.textMuted },
 
-    themeButton: {
+    headerActions: { flexDirection: 'row', gap: spacing.sm },
+    iconButton: {
       width: 34,
       height: 34,
       borderRadius: 17,
@@ -222,7 +278,8 @@ function createStyles(colors: Palette) {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    themeIcon: { fontSize: 15, color: colors.textSecondary },
+    iconButtonActive: { backgroundColor: colors.text, borderColor: colors.text },
+    icon: { fontSize: 15, color: colors.textSecondary },
 
     selector: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
 

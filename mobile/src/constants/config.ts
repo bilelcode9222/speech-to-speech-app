@@ -9,7 +9,7 @@
  * il affiche une ligne "Réseau : http://192.168.x.x:3000/health".
  * Recopie cette adresse ci-dessous, sans le "/health".
  */
-export const SERVER_URL = 'http://192.168.1.44:3000';
+export const SERVER_URL = 'https://speech-to-speech-app.onrender.com';
 
 /** Délai avant abandon d'une traduction (ms) */
 export const REQUEST_TIMEOUT_MS = 45_000;
