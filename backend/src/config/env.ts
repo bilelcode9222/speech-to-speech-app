@@ -47,6 +47,7 @@ export const config = {
     // Modèle multimodal qui accepte l'audio en entrée.
     // Vérifie le nom exact avec la commande donnée dans MIGRATION.md.
     model: process.env.GEMINI_MODEL || 'gemini-3-flash',
+    liveModel: process.env.GEMINI_LIVE_MODEL || 'gemini-3.1-flash-live-preview',
     ttsModel: process.env.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview',
     // 30 voix disponibles : Kore, Puck, Charon, Aoede, Fenrir, Leda...
     voice: process.env.GEMINI_VOICE || 'Kore',

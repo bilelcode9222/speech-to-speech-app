@@ -1,17 +1,18 @@
-import React, { useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { ActivityIndicator, Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { RecordButton } from './RecordButton';
 import { findLanguage } from '../constants/languages';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette, spacing, type } from '../theme/tokens';
 import { Exchange } from '../types';
 
+type Side = 'top' | 'bottom';
+
 interface Props {
   exchange: Exchange | null;
   sourceLanguage: string;
   targetLanguage: string;
-  /** Direction en cours d'enregistrement, null si aucun */
-  recordingSide: 'top' | 'bottom' | null;
+  recordingSide: Side | null;
   isBusy: boolean;
   onToggleTop: () => void;
   onToggleBottom: () => void;
@@ -20,13 +21,13 @@ interface Props {
 /**
  * Mode face-à-face.
  *
- * L'écran est coupé en deux. La moitié haute est pivotée à 180° : elle est
- * lisible par la personne assise en face, chacun voyant sa propre langue
- * du bon côté. Le téléphone se pose à plat entre les deux.
+ * L'écran est coupé en deux, la moitié haute pivotée à 180° pour la personne
+ * assise en face.
  *
- * Chaque moitié a son bouton : celui du haut enregistre dans la langue
- * cible, celui du bas dans la langue source. La conversation va donc dans
- * les deux sens sans jamais reprendre le téléphone en main.
+ * Repère visuel de la parole : la moitié active reste pleinement lisible et se
+ * borde d'un liseré rouge, tandis que l'autre s'estompe. Le contraste dit qui
+ * parle sans qu'on ait à lire quoi que ce soit — utile quand le téléphone est
+ * posé sur une table entre deux personnes.
  */
 export function FaceToFaceView({
   exchange,
@@ -40,8 +41,6 @@ export function FaceToFaceView({
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  // Chaque moitié affiche le texte dans SA langue, quel que soit le sens
-  // dans lequel la dernière phrase a circulé.
   const spokeFromBottom = exchange?.sourceLanguage === sourceLanguage;
 
   const topText = exchange
@@ -58,74 +57,128 @@ export function FaceToFaceView({
 
   const errored = exchange?.status === 'error';
 
+  // Qui a la parole : celui qui enregistre, ou à défaut celui qui vient de
+  // parler pendant que la traduction se calcule.
+  const activeSide: Side | null =
+    recordingSide || (isBusy ? (spokeFromBottom ? 'bottom' : 'top') : null);
+
   return (
     <View style={styles.container}>
-      <View style={[styles.half, styles.halfTop]}>
-        <View style={styles.rotated}>
-          <Panel
-            label={findLanguage(targetLanguage).label}
-            text={topText}
-            errored={errored}
-            errorMessage={exchange?.errorMessage}
-            colors={colors}
-          />
-          <RecordButton
-            isRecording={recordingSide === 'top'}
-            isBusy={isBusy || recordingSide === 'bottom'}
-            onToggle={onToggleTop}
-          />
-        </View>
-      </View>
+      <Half
+        side="top"
+        rotated
+        label={findLanguage(targetLanguage).label}
+        text={topText}
+        errored={errored}
+        errorMessage={exchange?.errorMessage}
+        activeSide={activeSide}
+        isRecording={recordingSide === 'top'}
+        isBusy={isBusy || recordingSide === 'bottom'}
+        onToggle={onToggleTop}
+        colors={colors}
+      />
 
       <View style={styles.divider} />
 
-      <View style={styles.half}>
-        <Panel
-          label={findLanguage(sourceLanguage).label}
-          text={bottomText}
-          errored={errored}
-          errorMessage={exchange?.errorMessage}
-          colors={colors}
-        />
-        <RecordButton
-          isRecording={recordingSide === 'bottom'}
-          isBusy={isBusy || recordingSide === 'top'}
-          onToggle={onToggleBottom}
-        />
-      </View>
+      <Half
+        side="bottom"
+        label={findLanguage(sourceLanguage).label}
+        text={bottomText}
+        errored={errored}
+        errorMessage={exchange?.errorMessage}
+        activeSide={activeSide}
+        isRecording={recordingSide === 'bottom'}
+        isBusy={isBusy || recordingSide === 'top'}
+        onToggle={onToggleBottom}
+        colors={colors}
+      />
     </View>
   );
 }
 
-function Panel({
-  label,
-  text,
-  errored,
-  errorMessage,
-  colors,
-}: {
+interface HalfProps {
+  side: Side;
+  rotated?: boolean;
   label: string;
   text: string | null;
   errored: boolean;
   errorMessage?: string;
+  activeSide: Side | null;
+  isRecording: boolean;
+  isBusy: boolean;
+  onToggle: () => void;
   colors: Palette;
-}) {
-  const styles = createStyles(colors);
+}
+
+function Half({
+  side,
+  rotated,
+  label,
+  text,
+  errored,
+  errorMessage,
+  activeSide,
+  isRecording,
+  isBusy,
+  onToggle,
+  colors,
+}: HalfProps) {
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const isActive = activeSide === side;
+  const isDimmed = activeSide !== null && !isActive;
+
+  // Transition douce plutôt qu'un basculement sec : l'oeil suit le
+  // déplacement de l'attention d'un côté à l'autre.
+  const dim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.timing(dim, {
+      toValue: isDimmed ? 0.32 : 1,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [isDimmed, dim]);
+
+  const content = (
+    <>
+      <View style={styles.panel}>
+        <View style={styles.labelRow}>
+          {isActive && <View style={styles.speakingDot} />}
+          <Text style={[styles.label, isActive && styles.labelActive]}>
+            {isActive ? 'Parle' : label}
+          </Text>
+        </View>
+
+        {errored ? (
+          <Text style={styles.error}>{errorMessage}</Text>
+        ) : text ? (
+          <Text style={styles.text} numberOfLines={6} adjustsFontSizeToFit>
+            {text}
+          </Text>
+        ) : (
+          <View style={styles.waiting}>
+            <ActivityIndicator size="small" color={colors.textMuted} />
+          </View>
+        )}
+      </View>
+
+      <RecordButton isRecording={isRecording} isBusy={isBusy} onToggle={onToggle} />
+    </>
+  );
 
   return (
-    <View style={styles.panel}>
-      <Text style={styles.label}>{label}</Text>
-      {errored ? (
-        <Text style={styles.error}>{errorMessage}</Text>
-      ) : text ? (
-        <Text style={styles.text} numberOfLines={6} adjustsFontSizeToFit>
-          {text}
-        </Text>
-      ) : (
-        <View style={styles.waiting}>
-          <ActivityIndicator size="small" color={colors.textMuted} />
-        </View>
-      )}
+    <View style={[styles.half, isActive && styles.halfActive]}>
+      <Animated.View
+        style={[
+          styles.inner,
+          rotated && styles.rotated,
+          { opacity: dim },
+        ]}
+      >
+        {content}
+      </Animated.View>
     </View>
   );
 }
@@ -135,25 +188,27 @@ function createStyles(colors: Palette) {
     container: { flex: 1 },
     half: {
       flex: 1,
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: spacing.lg,
-      paddingHorizontal: spacing.md,
+      borderRadius: 14,
+      marginHorizontal: spacing.sm,
+      marginVertical: 4,
+      borderWidth: 1.5,
+      // Bordure invisible au repos : la place est réservée pour éviter
+      // que la mise en page ne saute quand elle apparaît.
+      borderColor: 'transparent',
     },
-    halfTop: { justifyContent: 'center' },
-    // C'est cette rotation qui rend la moitié haute lisible d'en face
-    rotated: {
+    halfActive: { borderColor: colors.accent },
+    inner: {
       flex: 1,
-      width: '100%',
-      transform: [{ rotate: '180deg' }],
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.sm,
     },
+    rotated: { transform: [{ rotate: '180deg' }] },
     divider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: colors.border,
-      marginHorizontal: spacing.md,
+      marginHorizontal: spacing.lg,
     },
     panel: {
       flex: 1,
@@ -162,7 +217,15 @@ function createStyles(colors: Palette) {
       gap: spacing.sm,
       paddingHorizontal: spacing.sm,
     },
+    labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    speakingDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.accent,
+    },
     label: { ...type.eyebrow, color: colors.textMuted },
+    labelActive: { color: colors.accent },
     text: {
       fontSize: 30,
       lineHeight: 40,

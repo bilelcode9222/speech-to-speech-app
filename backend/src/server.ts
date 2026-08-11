@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import { config } from './config/env';
 import { logger } from './utils/logger';
 import { registerTranslationSocket } from './sockets/translationSocket';
+import { registerLiveSocket } from './sockets/liveSocket';
 import { runSpeechPipeline } from './pipeline/speechPipeline';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { LANGUAGES } from './utils/languages';
@@ -53,6 +54,7 @@ const io = new Server(server, {
 });
 
 registerTranslationSocket(io);
+registerLiveSocket(io);
 
 server.listen(config.port, '0.0.0.0', () => {
   logger.success(`Serveur démarré sur le port ${config.port}`);

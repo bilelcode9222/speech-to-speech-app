@@ -10,13 +10,18 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tonnom.voix",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "L'application a besoin du micro pour enregistrer ce que vous dites et le traduire."
+        "NSMicrophoneUsageDescription": "L'application a besoin du micro pour enregistrer ce que vous dites et le traduire.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.tonnom.voix",
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "plugins": [
@@ -26,7 +31,13 @@
           "microphonePermission": "Autoriser Voix à utiliser le micro pour traduire ce que vous dites."
         }
       ],
-      "expo-asset"
-    ]
+      "expo-asset",
+      "react-native-audio-api"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "82f90eae-81dc-4094-b442-9917a991bd34"
+      }
+    }
   }
 }
