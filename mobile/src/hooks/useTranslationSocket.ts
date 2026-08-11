@@ -6,7 +6,7 @@ import { useAppStore } from '../store/appStore';
 import { PipelineErrorPayload, PipelineResult, SOCKET_EVENTS } from '../types';
 
 /** Pause avant la lecture, pour laisser le temps de lire la traduction */
-const DELAI_AVANT_VOIX_MS = 800;
+const DELAI_AVANT_VOIX_MS = 0;
 
 export function useTranslationSocket(): void {
   const { updateExchange, setConnected } = useAppStore();
