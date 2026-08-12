@@ -21,35 +21,51 @@ function requireEnv(key: string): string {
 }
 
 /**
- * 'gemini' : un seul fournisseur. Transcription + traduction en un appel,
- *            puis voix Gemini. Deux appels au total.
- * 'groq'   : ancienne chaîne Whisper -> LLM -> ElevenLabs (ou voix iPhone).
+ * Qui transcrit et traduit.
+ *
+ * 'openai' : Whisper puis GPT. Deux appels, mais un service stable.
+ * 'gemini' : un seul appel audio -> texte traduit. Plus rapide, mais les
+ *            modèles en preview renvoient parfois des 500.
+ * 'groq'   : Whisper puis Llama, chez Groq.
  */
-const provider = (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'groq';
+const provider = (process.env.AI_PROVIDER || 'openai') as 'openai' | 'gemini' | 'groq';
 
 /**
- * 'gemini'     : voix Gemini, naturelle, 70 langues.
- * 'device'     : voix de l'iPhone. Gratuite, illimitée, hors ligne.
- * 'elevenlabs' : voix premium, quota payant.
+ * Qui produit la voix.
+ *
+ * 'openai'     : ~0,5 s, stable, 15 $ / million de caractères.
+ * 'device'     : voix de l'iPhone. Gratuite, instantanée, qualité moyenne.
+ * 'gemini'     : voix naturelle mais instable (503 en pic d'usage).
+ * 'elevenlabs' : voix premium, douze fois le prix d'OpenAI.
  */
-const ttsProvider = (process.env.TTS_PROVIDER || 'gemini') as
+const ttsProvider = (process.env.TTS_PROVIDER || 'openai') as
+  | 'openai'
   | 'gemini'
   | 'device'
   | 'elevenlabs';
+
+const needsOpenAI = provider === 'openai' || ttsProvider === 'openai';
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
   provider,
   ttsProvider,
 
+  openai: {
+    apiKey: needsOpenAI ? requireEnv('OPENAI_API_KEY') : optionalEnv('OPENAI_API_KEY'),
+    sttModel: process.env.OPENAI_STT_MODEL || 'whisper-1',
+    llmModel: process.env.OPENAI_LLM_MODEL || 'gpt-4o-mini',
+    // tts-1 plutôt que tts-1-hd : moitié prix, et surtout plus rapide
+    ttsModel: process.env.OPENAI_TTS_MODEL || 'tts-1',
+    // 9 voix : alloy, ash, coral, echo, fable, nova, onyx, sage, shimmer
+    voice: process.env.OPENAI_VOICE || 'nova',
+  },
+
   gemini: {
     apiKey: provider === 'gemini' ? requireEnv('GEMINI_API_KEY') : optionalEnv('GEMINI_API_KEY'),
-    // Modèle multimodal qui accepte l'audio en entrée.
-    // Vérifie le nom exact avec la commande donnée dans MIGRATION.md.
-    model: process.env.GEMINI_MODEL || 'gemini-3-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+    ttsModel: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
     liveModel: process.env.GEMINI_LIVE_MODEL || 'gemini-3.1-flash-live-preview',
-    ttsModel: process.env.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview',
-    // 30 voix disponibles : Kore, Puck, Charon, Aoede, Fenrir, Leda...
     voice: process.env.GEMINI_VOICE || 'Kore',
   },
 
