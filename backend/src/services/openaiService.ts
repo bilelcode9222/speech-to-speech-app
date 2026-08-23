@@ -3,6 +3,7 @@ import FormData from 'form-data';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { languageName } from '../utils/languages';
+import { isHallucination } from './geminiService';
 import {
   SpeechResult,
   StageError,
@@ -50,7 +51,7 @@ export async function transcribeOpenAI(
     const durationMs = Date.now() - started;
     logger.timing('OpenAI STT', durationMs);
 
-    if (!text) {
+    if (!text || isHallucination(text)) {
       throw new StageError('stt', "Aucune parole détectée dans l'enregistrement.");
     }
 
