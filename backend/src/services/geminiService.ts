@@ -74,7 +74,7 @@ export async function translateAudio(
     const originalText = (parsed.original || '').trim();
     const translatedText = (parsed.translation || '').trim();
 
-    if (!originalText) {
+    if (!originalText || isHallucination(originalText)) {
       throw new StageError('stt', "Aucune parole détectée dans l'enregistrement.");
     }
     if (!translatedText) {
@@ -187,4 +187,46 @@ function describeError(error: unknown): string {
     return `Erreur Gemini (${status}) : ${detail || error.message}`;
   }
   return `Erreur Gemini : ${error instanceof Error ? error.message : String(error)}`;
+}
+
+/**
+ * Détecte les hallucinations sur silence.
+ *
+ * Les modèles de transcription sont entraînés sur d'énormes corpus de vidéos
+ * sous-titrées. Face à un enregistrement silencieux ou inintelligible, ils
+ * produisent souvent la phrase de fin qu'ils ont vue des milliers de fois
+ * dans ces données — mentions de plateformes de sous-titrage, appels à
+ * l'abonnement, remerciements. Ce n'est pas de la parole : on traite ces
+ * cas comme un silence plutôt que de les traduire et de les lire à voix haute.
+ */
+export function isHallucination(text: string): boolean {
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const patterns = [
+    'amara org',
+    'sous titres realises',
+    'sous titrage',
+    'merci d avoir regarde',
+    'merci de votre attention',
+    'abonnez vous',
+    'thanks for watching',
+    'thank you for watching',
+    'subscribe to',
+    'like and subscribe',
+    'subtitles by',
+    'transcription by',
+  ];
+
+  if (patterns.some((p) => normalized.includes(p))) return true;
+
+  // Une transcription d'un seul caractère ou vide de sens
+  if (normalized.length <= 2) return true;
+
+  return false;
 }

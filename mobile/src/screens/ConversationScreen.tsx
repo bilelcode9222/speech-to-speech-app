@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { setAudioModeAsync } from 'expo-audio';
 
@@ -155,7 +155,7 @@ export function ConversationScreen() {
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Voix</Text>
+          <Image source={require("../../assets/logo-header-blanc.png")} style={{ width: 28, height: 28 }} />
           <View style={styles.status}>
             <View
               style={[

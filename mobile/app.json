@@ -1,21 +1,23 @@
 {
   "expo": {
-    "name": "Voix",
-    "slug": "voix-traduction",
+    "name": "Traduction vocale — Nevi AI",
+    "slug": "nevi",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "icon": "./assets/icon.png",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tonnom.voix",
+      "bundleIdentifier": "com.bilelzouaoui.neviai",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "L'application a besoin du micro pour enregistrer ce que vous dites et le traduire.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.tonnom.voix",
+      "package": "com.bilelzouaoui.neviai",
       "permissions": [
         "RECORD_AUDIO",
         "android.permission.RECORD_AUDIO",
@@ -28,7 +30,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Autoriser Voix à utiliser le micro pour traduire ce que vous dites."
+          "microphonePermission": "Autoriser Nevi AI à utiliser le micro pour traduire ce que vous dites."
         }
       ],
       "expo-asset",
