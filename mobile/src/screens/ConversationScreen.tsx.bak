@@ -154,7 +154,6 @@ export function ConversationScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
-      {!faceToFace && (
       <View style={styles.header}>
         <View>
           <Logo size={28} />
@@ -201,21 +200,8 @@ export function ConversationScreen() {
           </Pressable>
         </View>
       </View>
-      )}
 
-      <View style={styles.selectorRow}>
-        {faceToFace && (
-          <Pressable
-            onPress={() => setFaceToFace(false)}
-            hitSlop={10}
-            style={styles.exitButton}
-            accessibilityRole="button"
-            accessibilityLabel="Quitter le mode face à face"
-          >
-            <Text style={styles.icon}>✕</Text>
-          </Pressable>
-        )}
-        <View style={styles.selectorGrow}>
+      <View style={styles.selector}>
         <LanguageSelector
           sourceCode={sourceLanguage}
           targetCode={targetLanguage}
@@ -224,7 +210,6 @@ export function ConversationScreen() {
           onSwap={swapLanguages}
           disabled={isRecording || isBusy}
         />
-        </View>
       </View>
 
       {faceToFace ? (
@@ -300,25 +285,6 @@ function createStyles(colors: Palette) {
     icon: { fontSize: 15, color: colors.textSecondary },
 
     selector: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
-    selectorRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingBottom: spacing.sm,
-      paddingTop: spacing.sm,
-    },
-    selectorGrow: { flex: 1 },
-    exitButton: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
 
     list: { flex: 1 },
     listContent: { paddingHorizontal: spacing.md },

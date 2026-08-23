@@ -24,10 +24,10 @@ interface Props {
  * L'écran est coupé en deux, la moitié haute pivotée à 180° pour la personne
  * assise en face.
  *
- * Repère visuel de la parole : la moitié active reste pleinement lisible et se
- * borde d'un liseré rouge, tandis que l'autre s'estompe. Le contraste dit qui
- * parle sans qu'on ait à lire quoi que ce soit — utile quand le téléphone est
- * posé sur une table entre deux personnes.
+ * Repère visuel de la parole : la moitié active INVERSE ses couleurs — son
+ * fond prend la teinte du texte, son texte celle du fond. Le contraste
+ * bascule franchement d'un côté à l'autre, ce qui se lit d'un coup d'oeil
+ * quand le téléphone est posé sur une table entre deux personnes.
  */
 export function FaceToFaceView({
   exchange,
@@ -56,15 +56,16 @@ export function FaceToFaceView({
     : null;
 
   const errored = exchange?.status === 'error';
-  // Un chargement ne s'affiche que si un echange est reellement en cours :
-  // sans cela, les deux moities tournent dans le vide au demarrage.
+
+  // Un chargement ne s'affiche que si un échange est réellement en cours :
+  // sans cela, les deux moitiés tournent dans le vide au démarrage.
   const pending =
     exchange !== null && exchange.status !== 'done' && exchange.status !== 'error';
 
   // Qui a la parole : celui qui enregistre, ou à défaut celui qui vient de
   // parler pendant que la traduction se calcule.
   const activeSide: Side | null =
-    recordingSide || (isBusy ? (spokeFromBottom ? 'bottom' : 'top') : null);
+    recordingSide || (isBusy ? (spokeFromBottom ? "bottom" : "top") : "bottom");
 
   return (
     <View style={styles.container}>
@@ -134,27 +135,34 @@ function Half({
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const isActive = activeSide === side;
-  const isDimmed = activeSide !== null && !isActive;
 
-  // Transition douce plutôt qu'un basculement sec : l'oeil suit le
-  // déplacement de l'attention d'un côté à l'autre.
-  const dim = useRef(new Animated.Value(1)).current;
+  const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(dim, {
-      toValue: isDimmed ? 0.32 : 1,
+    Animated.timing(progress, {
+      toValue: isActive ? 1 : 0,
       duration: 260,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      // L'interpolation de couleur n'est pas supportée par le driver natif
+      useNativeDriver: false,
     }).start();
-  }, [isDimmed, dim]);
+  }, [isActive, progress]);
+
+  const bg = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [colors.background, colors.text],
+  });
+
+  // Texte et pictogrammes s'inversent avec le fond pour rester lisibles
+  const fg = isActive ? colors.background : colors.text;
+  const fgMuted = isActive ? colors.background : colors.textMuted;
 
   const content = (
     <>
       <View style={styles.panel}>
         <View style={styles.labelRow}>
-          {isActive && <View style={styles.speakingDot} />}
-          <Text style={[styles.label, isActive && styles.labelActive]}>
+          {isActive && <View style={[styles.speakingDot, { backgroundColor: fg }]} />}
+          <Text style={[styles.label, { color: fgMuted }]}>
             {isActive ? 'Parle' : label}
           </Text>
         </View>
@@ -162,12 +170,16 @@ function Half({
         {errored ? (
           <Text style={styles.error}>{errorMessage}</Text>
         ) : text ? (
-          <Text style={styles.text} numberOfLines={6} adjustsFontSizeToFit>
+          <Text
+            style={[styles.text, { color: fg }]}
+            numberOfLines={6}
+            adjustsFontSizeToFit
+          >
             {text}
           </Text>
         ) : pending ? (
           <View style={styles.waiting}>
-            <ActivityIndicator size="small" color={colors.textMuted} />
+            <ActivityIndicator size="small" color={fgMuted} />
           </View>
         ) : null}
       </View>
@@ -177,17 +189,9 @@ function Half({
   );
 
   return (
-    <View style={[styles.half, isActive && styles.halfActive]}>
-      <Animated.View
-        style={[
-          styles.inner,
-          rotated && styles.rotated,
-          { opacity: dim },
-        ]}
-      >
-        {content}
-      </Animated.View>
-    </View>
+    <Animated.View style={[styles.half, { backgroundColor: bg }]}>
+      <View style={[styles.inner, rotated && styles.rotated]}>{content}</View>
+    </Animated.View>
   );
 }
 
@@ -196,15 +200,11 @@ function createStyles(colors: Palette) {
     container: { flex: 1 },
     half: {
       flex: 1,
-      borderRadius: 14,
-      marginHorizontal: spacing.sm,
-      marginVertical: 4,
-      borderWidth: 1.5,
-      // Bordure invisible au repos : la place est réservée pour éviter
-      // que la mise en page ne saute quand elle apparaît.
-      borderColor: 'transparent',
+
+
+
+      overflow: 'hidden',
     },
-    halfActive: { borderColor: colors.accent },
     inner: {
       flex: 1,
       alignItems: 'center',
@@ -230,16 +230,13 @@ function createStyles(colors: Palette) {
       width: 7,
       height: 7,
       borderRadius: 4,
-      backgroundColor: colors.accent,
     },
-    label: { ...type.eyebrow, color: colors.textMuted },
-    labelActive: { color: colors.accent },
+    label: { ...type.eyebrow },
     text: {
       fontSize: 30,
       lineHeight: 40,
       fontWeight: '400',
       letterSpacing: -0.4,
-      color: colors.text,
       textAlign: 'center',
     },
     error: { ...type.body, color: colors.danger, textAlign: 'center' },

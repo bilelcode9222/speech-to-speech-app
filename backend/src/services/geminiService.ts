@@ -226,6 +226,18 @@ export function isHallucination(text: string): boolean {
   if (patterns.some((p) => normalized.includes(p))) return true;
 
   // Une transcription d'un seul caractère ou vide de sens
+  // Mots isolés produits sur silence. Les modèles de transcription
+  // hallucinent volontiers un mot de politesse ou de fin de vidéo quand
+  // l'entrée est vide : ce sont les tokens les plus fréquents de leurs
+  // données d'entraînement. Un mot seul est de toute façon rarement une
+  // vraie demande de traduction.
+  const singles = [
+    'merci', 'merci beaucoup', 'bonjour', 'au revoir', 'oui', 'non',
+    'thank you', 'thanks', 'hello', 'bye', 'goodbye', 'okay', 'ok',
+    'you', 'the', 'so', 'and', 'bye bye', 'sous titres', 'a bientot',
+  ];
+  if (singles.includes(normalized)) return true;
+
   if (normalized.length <= 2) return true;
 
   return false;

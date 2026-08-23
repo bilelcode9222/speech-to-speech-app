@@ -67,7 +67,7 @@ export function SplashScreen({ onFinish }: Props) {
         }}
       >
         <Image
-          source={require('../../assets/logo-header-blanc.png')}
+          source={require('../../assets/logo-header-noir.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -79,7 +79,7 @@ export function SplashScreen({ onFinish }: Props) {
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#191919',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     // au-dessus de tout le reste
