@@ -56,6 +56,10 @@ export function FaceToFaceView({
     : null;
 
   const errored = exchange?.status === 'error';
+  // Un chargement ne s'affiche que si un echange est reellement en cours :
+  // sans cela, les deux moities tournent dans le vide au demarrage.
+  const pending =
+    exchange !== null && exchange.status !== 'done' && exchange.status !== 'error';
 
   // Qui a la parole : celui qui enregistre, ou à défaut celui qui vient de
   // parler pendant que la traduction se calcule.
@@ -74,6 +78,7 @@ export function FaceToFaceView({
         activeSide={activeSide}
         isRecording={recordingSide === 'top'}
         isBusy={isBusy || recordingSide === 'bottom'}
+        pending={pending}
         onToggle={onToggleTop}
         colors={colors}
       />
@@ -89,6 +94,7 @@ export function FaceToFaceView({
         activeSide={activeSide}
         isRecording={recordingSide === 'bottom'}
         isBusy={isBusy || recordingSide === 'top'}
+        pending={pending}
         onToggle={onToggleBottom}
         colors={colors}
       />
@@ -106,6 +112,7 @@ interface HalfProps {
   activeSide: Side | null;
   isRecording: boolean;
   isBusy: boolean;
+  pending: boolean;
   onToggle: () => void;
   colors: Palette;
 }
@@ -120,6 +127,7 @@ function Half({
   activeSide,
   isRecording,
   isBusy,
+  pending,
   onToggle,
   colors,
 }: HalfProps) {
@@ -157,11 +165,11 @@ function Half({
           <Text style={styles.text} numberOfLines={6} adjustsFontSizeToFit>
             {text}
           </Text>
-        ) : (
+        ) : pending ? (
           <View style={styles.waiting}>
             <ActivityIndicator size="small" color={colors.textMuted} />
           </View>
-        )}
+        ) : null}
       </View>
 
       <RecordButton isRecording={isRecording} isBusy={isBusy} onToggle={onToggle} />

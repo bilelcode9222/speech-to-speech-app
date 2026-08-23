@@ -4,7 +4,7 @@
     "slug": "nevi",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
     "icon": "./assets/icon.png",
     "newArchEnabled": true,

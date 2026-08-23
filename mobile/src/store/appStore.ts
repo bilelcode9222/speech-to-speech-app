@@ -26,7 +26,7 @@ export const useAppStore = create<AppState>((set) => ({
   exchanges: [],
   isConnected: false,
   // Par défaut, on suit le réglage clair/sombre de l'iPhone
-  themePreference: 'system',
+  themePreference: 'light',
 
   setSourceLanguage: (code) =>
     set((state) => ({
