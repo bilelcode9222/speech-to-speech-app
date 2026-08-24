@@ -42,7 +42,6 @@ export async function transcribeOpenAI(
     // plutôt que de risquer une erreur. Un prompt d'amorce et une
     // température nulle le rendent nettement plus déterministe.
     form.append('temperature', '0');
-    form.append('prompt', 'Phrase courte de conversation courante.');
 
     const response = await axios.post(`${BASE}/audio/transcriptions`, form, {
       headers: {

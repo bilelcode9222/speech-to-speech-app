@@ -276,14 +276,9 @@ export function ConversationScreen() {
               </Text>
             </View>
           ) : (
-            <FlatList
-              style={styles.list}
-              contentContainerStyle={styles.listContent}
-              data={exchanges}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => <TranscriptBubble exchange={item} />}
-              showsVerticalScrollIndicator={false}
-            />
+            <View style={styles.singleExchange}>
+              <TranscriptBubble exchange={exchanges[0]} />
+            </View>
           )}
 
           <View style={styles.footer}>
@@ -353,6 +348,13 @@ function createStyles(colors: Palette) {
 
     list: { flex: 1 },
     listContent: { paddingHorizontal: spacing.md },
+    // Seule la traduction en cours est affichée : l'historique reste en
+    // mémoire mais n'encombre plus l'écran, qui redevient un espace de
+    // lecture plutôt qu'un journal.
+    singleExchange: {
+      flex: 1,
+      paddingHorizontal: spacing.md,
+    },
 
     empty: {
       flex: 1,
