@@ -1,9 +1,20 @@
+
 import React, { useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { RecordButton } from './RecordButton';
 import { findLanguage } from '../constants/languages';
 import { useTheme } from '../theme/ThemeProvider';
-import { Palette, spacing, type } from '../theme/tokens';
+import { Palette, type } from '../theme/tokens';
 import { Exchange } from '../types';
 
 type Side = 'top' | 'bottom';
@@ -16,18 +27,22 @@ interface Props {
   isBusy: boolean;
   onToggleTop: () => void;
   onToggleBottom: () => void;
+  onSwapLanguages: () => void;
+  onActiveSideChange?: (side: Side) => void;
+  onExit: () => void;
 }
 
 /**
- * Mode face-à-face.
+ * Mode face-à-face, plein écran.
  *
- * L'écran est coupé en deux, la moitié haute pivotée à 180° pour la personne
- * assise en face.
+ * Deux moitiés strictement égales, la haute pivotée à 180° pour la personne
+ * en face. Les noms de langues sont posés sur la ligne de séparation, avec
+ * le bouton d'échange au centre : chacun lit le sien du bon côté, et la
+ * frontière devient un repère plutôt qu'une simple limite.
  *
- * Repère visuel de la parole : la moitié active INVERSE ses couleurs — son
- * fond prend la teinte du texte, son texte celle du fond. Le contraste
- * bascule franchement d'un côté à l'autre, ce qui se lit d'un coup d'oeil
- * quand le téléphone est posé sur une table entre deux personnes.
+ * La moitié de celui qui a la parole inverse ses couleurs — fond de la
+ * teinte du texte, texte de la teinte du fond. L'inversion PERSISTE après
+ * la traduction : elle ne bascule que quand l'autre prend la parole.
  */
 export function FaceToFaceView({
   exchange,
@@ -37,9 +52,17 @@ export function FaceToFaceView({
   isBusy,
   onToggleTop,
   onToggleBottom,
+  onSwapLanguages,
+  onExit,
+  onActiveSideChange,
 }: Props) {
   const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const styles = useMemo(
+    () => createStyles(colors, width, height, insets.top),
+    [colors, width, height]
+  );
 
   const spokeFromBottom = exchange?.sourceLanguage === sourceLanguage;
 
@@ -56,49 +79,79 @@ export function FaceToFaceView({
     : null;
 
   const errored = exchange?.status === 'error';
-
-  // Un chargement ne s'affiche que si un échange est réellement en cours :
-  // sans cela, les deux moitiés tournent dans le vide au démarrage.
   const pending =
     exchange !== null && exchange.status !== 'done' && exchange.status !== 'error';
 
-  // Qui a la parole : celui qui enregistre, ou à défaut celui qui vient de
-  // parler pendant que la traduction se calcule.
-  const activeSide: Side | null =
-    recordingSide || (isBusy ? (spokeFromBottom ? "bottom" : "top") : "bottom");
+  // Le côté actif ne revient jamais au neutre : il reste sur la dernière
+  // personne à avoir parlé, jusqu'à ce que l'autre appuie sur son bouton.
+  const lastSide = useRef<Side>('bottom');
+  if (recordingSide) {
+    lastSide.current = recordingSide;
+  } else if (exchange) {
+    lastSide.current = spokeFromBottom ? 'bottom' : 'top';
+  }
+  const activeSide: Side = recordingSide ?? lastSide.current;
+
+  useEffect(() => {
+    onActiveSideChange?.(activeSide);
+  }, [activeSide, onActiveSideChange]);
+
+  const topActive = activeSide === 'top';
+  const bottomActive = activeSide === 'bottom';
 
   return (
     <View style={styles.container}>
       <Half
         side="top"
         rotated
-        label={findLanguage(targetLanguage).label}
         text={topText}
         errored={errored}
         errorMessage={exchange?.errorMessage}
-        activeSide={activeSide}
+        isActive={topActive}
         isRecording={recordingSide === 'top'}
         isBusy={isBusy || recordingSide === 'bottom'}
         pending={pending}
         onToggle={onToggleTop}
         colors={colors}
+        styles={styles}
       />
 
-      <View style={styles.divider} />
+      {/* Bandeau des langues, posé sur la frontière entre les deux moitiés */}
+      <View style={styles.languageBar}>
+        <Text style={[styles.languageLabel, styles.languageLabelTop]}>
+          {findLanguage(targetLanguage).label}
+        </Text>
+        <Pressable onPress={onSwapLanguages} hitSlop={12} style={styles.swapButton}>
+          <Text style={styles.swapIcon}>⇅</Text>
+        </Pressable>
+        <Text style={styles.languageLabel}>
+          {findLanguage(sourceLanguage).label}
+        </Text>
+      </View>
 
       <Half
         side="bottom"
-        label={findLanguage(sourceLanguage).label}
         text={bottomText}
         errored={errored}
         errorMessage={exchange?.errorMessage}
-        activeSide={activeSide}
+        isActive={bottomActive}
         isRecording={recordingSide === 'bottom'}
         isBusy={isBusy || recordingSide === 'top'}
         pending={pending}
         onToggle={onToggleBottom}
         colors={colors}
+        styles={styles}
       />
+
+      <Pressable
+        onPress={onExit}
+        hitSlop={14}
+        style={styles.exitButton}
+        accessibilityRole="button"
+        accessibilityLabel="Quitter le mode face à face"
+      >
+        <Text style={styles.exitIcon}>✕</Text>
+      </Pressable>
     </View>
   );
 }
@@ -106,37 +159,33 @@ export function FaceToFaceView({
 interface HalfProps {
   side: Side;
   rotated?: boolean;
-  label: string;
   text: string | null;
   errored: boolean;
   errorMessage?: string;
-  activeSide: Side | null;
+  isActive: boolean;
   isRecording: boolean;
   isBusy: boolean;
   pending: boolean;
   onToggle: () => void;
   colors: Palette;
+  styles: ReturnType<typeof createStyles>;
 }
 
 function Half({
-  side,
   rotated,
-  label,
   text,
   errored,
   errorMessage,
-  activeSide,
+  isActive,
   isRecording,
   isBusy,
   pending,
   onToggle,
   colors,
+  styles,
 }: HalfProps) {
-  const styles = useMemo(() => createStyles(colors), [colors]);
-
-  const isActive = activeSide === side;
-
-  const progress = useRef(new Animated.Value(0)).current;
+  const insets = useSafeAreaInsets();
+  const progress = useRef(new Animated.Value(isActive ? 1 : 0)).current;
 
   useEffect(() => {
     Animated.timing(progress, {
@@ -153,93 +202,136 @@ function Half({
     outputRange: [colors.background, colors.text],
   });
 
-  // Texte et pictogrammes s'inversent avec le fond pour rester lisibles
   const fg = isActive ? colors.background : colors.text;
   const fgMuted = isActive ? colors.background : colors.textMuted;
 
-  const content = (
-    <>
-      <View style={styles.panel}>
-        <View style={styles.labelRow}>
-          {isActive && <View style={[styles.speakingDot, { backgroundColor: fg }]} />}
-          <Text style={[styles.label, { color: fgMuted }]}>
-            {isActive ? 'Parle' : label}
-          </Text>
-        </View>
-
-        {errored ? (
-          <Text style={styles.error}>{errorMessage}</Text>
-        ) : text ? (
-          <Text
-            style={[styles.text, { color: fg }]}
-            numberOfLines={6}
-            adjustsFontSizeToFit
-          >
-            {text}
-          </Text>
-        ) : pending ? (
-          <View style={styles.waiting}>
-            <ActivityIndicator size="small" color={fgMuted} />
-          </View>
-        ) : null}
-      </View>
-
-      <RecordButton isRecording={isRecording} isBusy={isBusy} onToggle={onToggle} />
-    </>
-  );
-
   return (
     <Animated.View style={[styles.half, { backgroundColor: bg }]}>
-      <View style={[styles.inner, rotated && styles.rotated]}>{content}</View>
+      <View style={[styles.inner, rotated && styles.rotated, rotated && { paddingBottom: insets.top }]}>
+        <View style={styles.textZone}>
+          {errored ? (
+            <Text style={[styles.errorText, { color: colors.danger }]}>
+              {errorMessage}
+            </Text>
+          ) : text ? (
+            <Text
+              style={[styles.text, { color: fg }]}
+              numberOfLines={5}
+              adjustsFontSizeToFit
+              minimumFontScale={0.5}
+            >
+              {text}
+            </Text>
+          ) : pending ? (
+            <ActivityIndicator size="small" color={fgMuted} />
+          ) : null}
+        </View>
+
+        <View style={styles.buttonZone}>
+          <RecordButton isRecording={isRecording} isBusy={isBusy} onToggle={onToggle} />
+        </View>
+      </View>
     </Animated.View>
   );
 }
 
-function createStyles(colors: Palette) {
+/**
+ * Dimensions dérivées de la taille de l'écran plutôt que fixées en dur :
+ * une valeur juste sur iPhone est disproportionnée sur iPad. Les bornes
+ * min/max évitent les extrêmes aux deux bouts.
+ */
+function createStyles(colors: Palette, width: number, height: number, insetsTop = 0) {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const textSize = clamp(width * 0.075, 24, 64);
+  const buttonZone = clamp(height * 0.21, 150, 340);
+  const pad = clamp(width * 0.05, 14, 56);
+  const barHeight = clamp(height * 0.05, 38, 72);
+
   return StyleSheet.create({
     container: { flex: 1 },
     half: {
+      // flexBasis à 0 force un partage strictement égal : sans lui, la
+      // moitié contenant le plus de texte s'approprie plus de hauteur.
       flex: 1,
-
-
-
+      flexBasis: 0,
       overflow: 'hidden',
     },
     inner: {
       flex: 1,
       alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: spacing.lg,
-      paddingHorizontal: spacing.sm,
+      justifyContent: 'center',
+      paddingHorizontal: pad,
     },
     rotated: { transform: [{ rotate: '180deg' }] },
-    divider: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: colors.border,
-      marginHorizontal: spacing.lg,
-    },
-    panel: {
+    textZone: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.sm,
+      width: '100%',
     },
-    labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    speakingDot: {
-      width: 7,
-      height: 7,
-      borderRadius: 4,
+    buttonZone: {
+      height: buttonZone,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
-    label: { ...type.eyebrow },
     text: {
-      fontSize: 30,
-      lineHeight: 40,
+      fontSize: textSize,
+      lineHeight: textSize * 1.33,
       fontWeight: '400',
       letterSpacing: -0.4,
       textAlign: 'center',
     },
-    error: { ...type.body, color: colors.danger, textAlign: 'center' },
-    waiting: { height: 40, justifyContent: 'center' },
+    errorText: { ...type.body, textAlign: 'center' },
+
+    languageBar: {
+      // Superposé à la frontière plutôt qu'inséré entre les deux moitiés :
+      // inséré, il décalerait la ligne de séparation et romprait le 50/50.
+      position: 'absolute',
+      top: '50%',
+      left: 0,
+      right: 0,
+      marginTop: -barHeight / 2,
+      zIndex: 8,
+      height: barHeight,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: pad,
+      backgroundColor: colors.surface,
+    },
+    languageLabel: {
+      ...type.eyebrow,
+      color: colors.textSecondary,
+      flex: 1,
+    },
+    languageLabelTop: {
+      // Pivoté pour être lisible par la personne d'en face
+      transform: [{ rotate: '180deg' }],
+      textAlign: 'right',
+    },
+    swapButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    swapIcon: { fontSize: 16, color: colors.textMuted },
+
+    exitButton: {
+      position: 'absolute',
+      top: insetsTop + 8,
+      right: 14,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      // Fond neutre translucide : reste visible que la moitié sous le
+      // bouton soit claire ou sombre.
+      backgroundColor: 'rgba(128,128,128,0.3)',
+      zIndex: 10,
+    },
+    exitIcon: { fontSize: 15, color: '#FFFFFF' },
   });
 }

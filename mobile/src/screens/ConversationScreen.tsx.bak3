@@ -10,7 +10,6 @@ import { RecordButton } from '../components/RecordButton';
 import { TranscriptBubble } from '../components/TranscriptBubble';
 import { MAX_RECORDING_MS, SERVER_URL } from '../constants/config';
 import { useTranslationSocket } from '../hooks/useTranslationSocket';
-import { useSilenceDetection } from '../hooks/useSilenceDetection';
 import {
   formatFromUri,
   prepareAudioSession,
@@ -57,9 +56,6 @@ export function ConversationScreen() {
 
   useTranslationSocket();
 
-  // Arrêt automatique après un silence : plus besoin d'appuyer une
-  // seconde fois pour envoyer.
-
   useEffect(() => {
     prepareAudioSession().then((granted) => {
       setMicReady(granted);
@@ -73,9 +69,6 @@ export function ConversationScreen() {
   }, []);
 
   const isRecording = recordingSide !== null;
-
-  // Arrêt automatique après un silence : plus besoin d'appuyer une seconde fois.
-  useSilenceDetection(recorder, isRecording, () => stopRecording());
   const isBusy = exchanges.some((e) => e.status !== 'done' && e.status !== 'error');
 
   const startRecording = useCallback(
@@ -177,7 +170,7 @@ export function ConversationScreen() {
       // En face-à-face, les moitiés colorées doivent aller jusqu'aux bords
       // physiques de l'écran : réserver les zones sécurisées y laisserait
       // des bandes de fond visibles en haut et en bas.
-      edges={faceToFace ? [] : ['top', 'bottom']}
+      edges={['top', 'bottom']}
     >
       {!faceToFace && (
       <View style={styles.header}>

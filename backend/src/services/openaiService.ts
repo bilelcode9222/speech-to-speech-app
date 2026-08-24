@@ -37,6 +37,12 @@ export async function transcribeOpenAI(
     form.append('model', config.openai.sttModel);
     form.append('language', language);
     form.append('response_format', 'json');
+    // Whisper renvoie parfois une transcription vide sur un énoncé très
+    // court (un mot isolé) : sans contexte, il préfère ne rien produire
+    // plutôt que de risquer une erreur. Un prompt d'amorce et une
+    // température nulle le rendent nettement plus déterministe.
+    form.append('temperature', '0');
+    form.append('prompt', 'Phrase courte de conversation courante.');
 
     const response = await axios.post(`${BASE}/audio/transcriptions`, form, {
       headers: {

@@ -24,7 +24,9 @@ export async function prepareAudioSession(): Promise<boolean> {
 
 /** Hook de bas niveau, réexporté pour garder les imports centralisés */
 export function useRecorder() {
-  return useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  // isMeteringEnabled expose le niveau sonore dans l'état du recorder,
+  // ce qui permet de détecter les silences et d'arrêter automatiquement.
+  return useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
 }
 
 /** Lit le fichier enregistré et le convertit en base64 pour l'envoi réseau */
