@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
-    "icon": "./assets/icon.png",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
@@ -34,7 +33,8 @@
         }
       ],
       "expo-asset",
-      "react-native-audio-api"
+      "react-native-audio-api",
+      "expo-localization"
     ],
     "extra": {
       "eas": {

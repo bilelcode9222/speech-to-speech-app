@@ -3,6 +3,7 @@ import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native
 import { findLanguage, LANGUAGES } from '../constants/languages';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette, radius, spacing, type } from '../theme/tokens';
+import { useTranslation } from '../i18n/useTranslation';
 
 interface Props {
   sourceCode: string;
@@ -21,6 +22,7 @@ export function LanguageSelector({
   onSwap,
   disabled,
 }: Props) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [picking, setPicking] = useState<'source' | 'target' | null>(null);
@@ -64,7 +66,7 @@ export function LanguageSelector({
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.grabber} />
             <Text style={styles.sheetTitle}>
-              {picking === 'source' ? 'Langue parlée' : 'Traduire vers'}
+              {picking === 'source' ? t('spokenLanguage') : t('translateTo')}
             </Text>
             <FlatList
               data={LANGUAGES}

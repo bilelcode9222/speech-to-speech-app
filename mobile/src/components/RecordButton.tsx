@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette, radius, type } from '../theme/tokens';
+import { useTranslation } from '../i18n/useTranslation';
 
 interface Props {
   isRecording: boolean;
@@ -17,6 +18,7 @@ interface Props {
  * "stop" qu'on retrouve sur tous les dictaphones.
  */
 export function RecordButton({ isRecording, isBusy, onToggle }: Props) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -63,10 +65,10 @@ export function RecordButton({ isRecording, isBusy, onToggle }: Props) {
   const coreRadius = morph.interpolate({ inputRange: [0, 1], outputRange: [28, 5] });
 
   const label = isBusy
-    ? 'Traduction en cours'
+    ? t('translating')
     : isRecording
-    ? 'Touche pour traduire'
-    : 'Touche et parle';
+    ? t('tapToTranslate')
+    : t('tapAndSpeak');
 
   return (
     <View style={styles.wrapper}>
@@ -81,7 +83,7 @@ export function RecordButton({ isRecording, isBusy, onToggle }: Props) {
           disabled={isBusy}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel={isRecording ? 'Arrêter et traduire' : 'Démarrer l\'enregistrement'}
+          accessibilityLabel={isRecording ? t('stopAndTranslate') : t('startRecording')}
           style={({ pressed }) => [
             styles.button,
             isBusy && styles.buttonBusy,

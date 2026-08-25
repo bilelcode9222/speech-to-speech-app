@@ -16,6 +16,7 @@ import { findLanguage } from '../constants/languages';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette, type } from '../theme/tokens';
 import { Exchange } from '../types';
+import { useTranslation } from '../i18n/useTranslation';
 
 type Side = 'top' | 'bottom';
 
@@ -56,6 +57,7 @@ export function FaceToFaceView({
   onExit,
   onActiveSideChange,
 }: Props) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -148,7 +150,7 @@ export function FaceToFaceView({
         hitSlop={14}
         style={styles.exitButton}
         accessibilityRole="button"
-        accessibilityLabel="Quitter le mode face à face"
+        accessibilityLabel={t('faceToFaceExit')}
       >
         <Text style={styles.exitIcon}>✕</Text>
       </Pressable>

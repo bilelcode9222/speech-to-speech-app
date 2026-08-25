@@ -1,0 +1,123 @@
+export interface Language {
+  code: string;
+  label: string;
+  flag: string;
+}
+
+/**
+ * Les 99 langues reconnues par Whisper, tirées de son tokenizer officiel.
+ * Les plus courantes sont en tête, le reste suit l'ordre alphabétique.
+ *
+ * La qualité varie énormément selon la langue : excellente pour celles
+ * massivement représentées sur le web, approximative pour les autres.
+ * La synthèse vocale ne couvre pas toutes ces langues — le texte traduit
+ * s'affiche dans tous les cas, la voix peut manquer sur les plus rares.
+ *
+ * Doit rester aligné avec backend/src/utils/languages.ts.
+ */
+export const LANGUAGES: Language[] = [
+  { code: 'fr', label: 'Français', flag: '🇫🇷' },
+  { code: 'en', label: 'Anglais', flag: '🇬🇧' },
+  { code: 'es', label: 'Espagnol', flag: '🇪🇸' },
+  { code: 'de', label: 'Allemand', flag: '🇩🇪' },
+  { code: 'it', label: 'Italien', flag: '🇮🇹' },
+  { code: 'pt', label: 'Portugais', flag: '🇵🇹' },
+  { code: 'ar', label: 'Arabe', flag: '🇸🇦' },
+  { code: 'zh', label: 'Chinois', flag: '🇨🇳' },
+  { code: 'ja', label: 'Japonais', flag: '🇯🇵' },
+  { code: 'ru', label: 'Russe', flag: '🇷🇺' },
+  { code: 'af', label: 'Afrikaans', flag: '🇿🇦' },
+  { code: 'sq', label: 'Albanais', flag: '🇦🇱' },
+  { code: 'am', label: 'Amharique', flag: '🇪🇹' },
+  { code: 'hy', label: 'Arménien', flag: '🇦🇲' },
+  { code: 'as', label: 'Assamais', flag: '🇮🇳' },
+  { code: 'az', label: 'Azéri', flag: '🇦🇿' },
+  { code: 'ba', label: 'Bachkir', flag: '🇷🇺' },
+  { code: 'eu', label: 'Basque', flag: '🇪🇸' },
+  { code: 'bn', label: 'Bengali', flag: '🇧🇩' },
+  { code: 'my', label: 'Birman', flag: '🇲🇲' },
+  { code: 'be', label: 'Biélorusse', flag: '🇧🇾' },
+  { code: 'bs', label: 'Bosniaque', flag: '🇧🇦' },
+  { code: 'br', label: 'Breton', flag: '🇫🇷' },
+  { code: 'bg', label: 'Bulgare', flag: '🇧🇬' },
+  { code: 'yue', label: 'Cantonais', flag: '🇭🇰' },
+  { code: 'ca', label: 'Catalan', flag: '🇪🇸' },
+  { code: 'ko', label: 'Coréen', flag: '🇰🇷' },
+  { code: 'hr', label: 'Croate', flag: '🇭🇷' },
+  { code: 'ht', label: 'Créole haïtien', flag: '🇭🇹' },
+  { code: 'da', label: 'Danois', flag: '🇩🇰' },
+  { code: 'et', label: 'Estonien', flag: '🇪🇪' },
+  { code: 'fi', label: 'Finnois', flag: '🇫🇮' },
+  { code: 'fo', label: 'Féroïen', flag: '🇫🇴' },
+  { code: 'gl', label: 'Galicien', flag: '🇪🇸' },
+  { code: 'cy', label: 'Gallois', flag: '🏴󠁧󠁢󠁷󠁬󠁳󠁿' },
+  { code: 'el', label: 'Grec', flag: '🇬🇷' },
+  { code: 'gu', label: 'Gujarati', flag: '🇮🇳' },
+  { code: 'ka', label: 'Géorgien', flag: '🇬🇪' },
+  { code: 'ha', label: 'Haoussa', flag: '🇳🇬' },
+  { code: 'haw', label: 'Hawaïen', flag: '🇺🇸' },
+  { code: 'hi', label: 'Hindi', flag: '🇮🇳' },
+  { code: 'hu', label: 'Hongrois', flag: '🇭🇺' },
+  { code: 'he', label: 'Hébreu', flag: '🇮🇱' },
+  { code: 'id', label: 'Indonésien', flag: '🇮🇩' },
+  { code: 'is', label: 'Islandais', flag: '🇮🇸' },
+  { code: 'jw', label: 'Javanais', flag: '🇮🇩' },
+  { code: 'kn', label: 'Kannada', flag: '🇮🇳' },
+  { code: 'kk', label: 'Kazakh', flag: '🇰🇿' },
+  { code: 'km', label: 'Khmer', flag: '🇰🇭' },
+  { code: 'lo', label: 'Lao', flag: '🇱🇦' },
+  { code: 'la', label: 'Latin', flag: '🇻🇦' },
+  { code: 'lv', label: 'Letton', flag: '🇱🇻' },
+  { code: 'ln', label: 'Lingala', flag: '🇨🇩' },
+  { code: 'lt', label: 'Lituanien', flag: '🇱🇹' },
+  { code: 'lb', label: 'Luxembourgeois', flag: '🇱🇺' },
+  { code: 'mk', label: 'Macédonien', flag: '🇲🇰' },
+  { code: 'ms', label: 'Malais', flag: '🇲🇾' },
+  { code: 'ml', label: 'Malayalam', flag: '🇮🇳' },
+  { code: 'mg', label: 'Malgache', flag: '🇲🇬' },
+  { code: 'mt', label: 'Maltais', flag: '🇲🇹' },
+  { code: 'mi', label: 'Maori', flag: '🇳🇿' },
+  { code: 'mr', label: 'Marathi', flag: '🇮🇳' },
+  { code: 'mn', label: 'Mongol', flag: '🇲🇳' },
+  { code: 'no', label: 'Norvégien', flag: '🇳🇴' },
+  { code: 'nn', label: 'Norvégien (nynorsk)', flag: '🇳🇴' },
+  { code: 'nl', label: 'Néerlandais', flag: '🇳🇱' },
+  { code: 'ne', label: 'Népalais', flag: '🇳🇵' },
+  { code: 'oc', label: 'Occitan', flag: '🇫🇷' },
+  { code: 'ur', label: 'Ourdou', flag: '🇵🇰' },
+  { code: 'uz', label: 'Ouzbek', flag: '🇺🇿' },
+  { code: 'ps', label: 'Pachto', flag: '🇦🇫' },
+  { code: 'pa', label: 'Pendjabi', flag: '🇮🇳' },
+  { code: 'fa', label: 'Persan', flag: '🇮🇷' },
+  { code: 'pl', label: 'Polonais', flag: '🇵🇱' },
+  { code: 'ro', label: 'Roumain', flag: '🇷🇴' },
+  { code: 'sa', label: 'Sanskrit', flag: '🇮🇳' },
+  { code: 'sr', label: 'Serbe', flag: '🇷🇸' },
+  { code: 'sn', label: 'Shona', flag: '🇿🇼' },
+  { code: 'sd', label: 'Sindhi', flag: '🇵🇰' },
+  { code: 'si', label: 'Singhalais', flag: '🇱🇰' },
+  { code: 'sk', label: 'Slovaque', flag: '🇸🇰' },
+  { code: 'sl', label: 'Slovène', flag: '🇸🇮' },
+  { code: 'so', label: 'Somali', flag: '🇸🇴' },
+  { code: 'su', label: 'Soundanais', flag: '🇮🇩' },
+  { code: 'sv', label: 'Suédois', flag: '🇸🇪' },
+  { code: 'sw', label: 'Swahili', flag: '🇰🇪' },
+  { code: 'tg', label: 'Tadjik', flag: '🇹🇯' },
+  { code: 'tl', label: 'Tagalog', flag: '🇵🇭' },
+  { code: 'ta', label: 'Tamoul', flag: '🇮🇳' },
+  { code: 'tt', label: 'Tatar', flag: '🇷🇺' },
+  { code: 'cs', label: 'Tchèque', flag: '🇨🇿' },
+  { code: 'th', label: 'Thaï', flag: '🇹🇭' },
+  { code: 'bo', label: 'Tibétain', flag: '🇨🇳' },
+  { code: 'tr', label: 'Turc', flag: '🇹🇷' },
+  { code: 'tk', label: 'Turkmène', flag: '🇹🇲' },
+  { code: 'te', label: 'Télougou', flag: '🇮🇳' },
+  { code: 'uk', label: 'Ukrainien', flag: '🇺🇦' },
+  { code: 'vi', label: 'Vietnamien', flag: '🇻🇳' },
+  { code: 'yi', label: 'Yiddish', flag: '🇮🇱' },
+  { code: 'yo', label: 'Yoruba', flag: '🇳🇬' },
+];
+
+export function findLanguage(code: string): Language {
+  return LANGUAGES.find((l) => l.code === code) || LANGUAGES[0];
+}

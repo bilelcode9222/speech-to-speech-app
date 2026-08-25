@@ -112,5 +112,8 @@ export function languageName(code: string): string {
 }
 
 export function isSupported(code: string): boolean {
+  // 'auto' n'est pas une langue mais une consigne : laisser Whisper
+  // détecter. Valide en source uniquement, jamais en cible.
+  if (code === 'auto') return true;
   return code in LANGUAGES;
 }

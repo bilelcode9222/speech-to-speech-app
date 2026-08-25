@@ -22,11 +22,13 @@ import { useAppStore } from '../store/appStore';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette, spacing, type } from '../theme/tokens';
 import { SOCKET_EVENTS } from '../types';
+import { useTranslation } from '../i18n/useTranslation';
 
 /** Quelle moitié de l'écran a lancé l'enregistrement en mode face-à-face */
 type Side = 'top' | 'bottom';
 
 export function ConversationScreen() {
+  const { t } = useTranslation();
   const { colors, name: themeName, toggle } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -65,8 +67,8 @@ export function ConversationScreen() {
       setMicReady(granted);
       if (!granted) {
         Alert.alert(
-          'Micro refusé',
-          "L'application ne peut pas fonctionner sans accès au micro. Autorise-le dans Réglages > Voix."
+          t('micDenied'),
+          t('micDeniedBody')
         );
       }
     });
@@ -91,7 +93,7 @@ export function ConversationScreen() {
         autoStop.current = setTimeout(() => stopRecording(), MAX_RECORDING_MS);
       } catch (error) {
         console.log('[record] démarrage impossible', error);
-        Alert.alert('Micro indisponible', "L'enregistrement n'a pas pu démarrer.");
+        Alert.alert(t('micUnavailable'), t('micUnavailableBody'));
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
@@ -191,7 +193,7 @@ export function ConversationScreen() {
               ]}
             />
             <Text style={styles.statusText}>
-              {isConnected ? 'Connecté' : 'Serveur hors ligne'}
+              {isConnected ? t('connected') : t('serverOffline')}
             </Text>
           </View>
         </View>
@@ -203,7 +205,7 @@ export function ConversationScreen() {
             style={[styles.iconButton, faceToFace && styles.iconButtonActive]}
             accessibilityRole="button"
             accessibilityLabel={
-              faceToFace ? 'Quitter le mode face à face' : 'Mode face à face'
+              faceToFace ? t('faceToFaceExit') : t('faceToFaceEnter')
             }
           >
             <Text
@@ -219,7 +221,7 @@ export function ConversationScreen() {
             style={styles.iconButton}
             accessibilityRole="button"
             accessibilityLabel={
-              themeName === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'
+              themeName === 'dark' ? t('themeToLight') : t('themeToDark')
             }
           >
             <Text style={styles.icon}>{themeName === 'dark' ? '☀' : '☾'}</Text>
@@ -270,11 +272,7 @@ export function ConversationScreen() {
       ) : (
         <>
           {exchanges.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyBody}>
-                Touche le bouton, dis une phrase, touche à nouveau.
-              </Text>
-            </View>
+            <View style={styles.empty} />
           ) : (
             <View style={styles.singleExchange}>
               <TranscriptBubble exchange={exchanges[0]} />

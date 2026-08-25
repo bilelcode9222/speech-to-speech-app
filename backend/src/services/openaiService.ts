@@ -35,7 +35,11 @@ export async function transcribeOpenAI(
     const form = new FormData();
     form.append('file', buffer, { filename: `audio.${format}`, contentType: mime(format) });
     form.append('model', config.openai.sttModel);
-    form.append('language', language);
+    // En mode auto, on n'envoie pas le paramètre : Whisper détecte alors
+    // lui-même la langue. Utile quand on ignore ce que va dire l'autre.
+    if (language !== 'auto') {
+      form.append('language', language);
+    }
     form.append('response_format', 'json');
     // Whisper renvoie parfois une transcription vide sur un énoncé très
     // court (un mot isolé) : sans contexte, il préfère ne rien produire

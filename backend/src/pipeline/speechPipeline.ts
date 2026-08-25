@@ -144,6 +144,9 @@ function validate(request: TranslationRequest): void {
   if (!isSupported(request.sourceLanguage)) {
     throw new StageError('unknown', `Langue source non supportée : ${request.sourceLanguage}`);
   }
+  if (request.targetLanguage === 'auto') {
+    throw new StageError('unknown', 'La langue cible doit être explicite.');
+  }
   if (!isSupported(request.targetLanguage)) {
     throw new StageError('unknown', `Langue cible non supportée : ${request.targetLanguage}`);
   }

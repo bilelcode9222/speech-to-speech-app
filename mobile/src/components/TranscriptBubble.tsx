@@ -4,6 +4,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { Palette, radius, spacing, type } from '../theme/tokens';
 import { Exchange } from '../types';
 import { findLanguage } from '../constants/languages';
+import { useTranslation } from '../i18n/useTranslation';
 
 /**
  * Un échange = ce que tu as dit, puis sa traduction.
@@ -13,6 +14,7 @@ import { findLanguage } from '../constants/languages';
  * relie les deux, comme un bloc cité dans Notion.
  */
 export function TranscriptBubble({ exchange }: { exchange: Exchange }) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -22,7 +24,7 @@ export function TranscriptBubble({ exchange }: { exchange: Exchange }) {
   if (exchange.status === 'error') {
     return (
       <View style={[styles.card, styles.cardError]}>
-        <Text style={styles.errorTitle}>Traduction interrompue</Text>
+        <Text style={styles.errorTitle}>{t('translationFailed')}</Text>
         <Text style={styles.errorBody}>{exchange.errorMessage}</Text>
       </View>
     );
