@@ -47,7 +47,7 @@ const BCP47: Record<string, string> = {
   hr: 'hr-HR',
   sk: 'sk-SK',
   bg: 'bg-BG',
-  fil: 'fil-PH',
+  tl: 'fil-PH',
 };
 
 export function toBcp47(code: string): string {

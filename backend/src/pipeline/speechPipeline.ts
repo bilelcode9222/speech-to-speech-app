@@ -9,7 +9,7 @@ import {
 import { translateAudio, synthesizeSpeechGemini } from '../services/geminiService';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
-import { isSupported } from '../utils/languages';
+import { canBeTarget, isSupported } from '../utils/languages';
 import { PipelineResult, StageError, TranslationRequest } from '../types';
 
 export interface PipelineHooks {
@@ -149,6 +149,15 @@ function validate(request: TranslationRequest): void {
   }
   if (!isSupported(request.targetLanguage)) {
     throw new StageError('unknown', `Langue cible non supportée : ${request.targetLanguage}`);
+  }
+  // Whisper transcrit 100 langues, la voix OpenAI n'en prononce que 57.
+  // Sur les autres l'API répond 200 avec un MP3 inaudible : il faut donc
+  // bloquer ici, aucune erreur ne sera levée plus loin.
+  if (!canBeTarget(request.targetLanguage)) {
+    throw new StageError(
+      'unknown',
+      `Aucune voix disponible pour : ${request.targetLanguage}`
+    );
   }
   if (request.sourceLanguage === request.targetLanguage) {
     throw new StageError('unknown', 'La langue source et la langue cible sont identiques.');

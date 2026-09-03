@@ -1,5 +1,5 @@
 /**
- * Les 99 langues reconnues par Whisper, tirées de son tokenizer officiel.
+ * Les 100 langues reconnues par Whisper (99 du tokenizer + yue).
  * Le code ISO sert à la transcription, le nom au prompt de traduction.
  *
  * Doit rester aligné avec mobile/src/constants/languages.ts.
@@ -116,4 +116,35 @@ export function isSupported(code: string): boolean {
   // détecter. Valide en source uniquement, jamais en cible.
   if (code === 'auto') return true;
   return code in LANGUAGES;
+}
+
+/**
+ * Les 57 langues pour lesquelles OpenAI documente une voix correcte.
+ *
+ * Attention : l'API ne rejette PAS les autres. Elle renvoie un MP3 valide
+ * mais mal prononcé, donc aucune exception n'est levée et le repli du
+ * pipeline ne se déclenche jamais. Il faut vérifier en amont.
+ *
+ * Référence : https://platform.openai.com/docs/guides/text-to-speech
+ */
+const TTS_LANGUAGES = new Set([
+  'af', 'ar', 'hy', 'az', 'be', 'bs', 'bg', 'ca', 'zh', 'hr',
+  'cs', 'da', 'nl', 'en', 'et', 'fi', 'fr', 'gl', 'de', 'el',
+  'he', 'hi', 'hu', 'is', 'id', 'it', 'ja', 'kn', 'kk', 'ko',
+  'lv', 'lt', 'mk', 'ms', 'mr', 'mi', 'ne', 'no', 'fa', 'pl',
+  'pt', 'ro', 'ru', 'sr', 'sk', 'sl', 'es', 'sw', 'sv', 'tl',
+  'ta', 'th', 'tr', 'uk', 'ur', 'vi', 'cy',
+]);
+
+/** La voix OpenAI sait-elle prononcer cette langue ? */
+export function hasVoice(code: string): boolean {
+  return TTS_LANGUAGES.has(code);
+}
+
+/**
+ * Une langue peut-elle servir de cible ?
+ * 'auto' est exclu : la cible doit toujours être explicite.
+ */
+export function canBeTarget(code: string): boolean {
+  return code in LANGUAGES && hasVoice(code);
 }
