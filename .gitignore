@@ -4,3 +4,8 @@ dist/
 .expo/
 *.log
 .DS_Store
+
+*.bak
+*.backup-*
+src.avant-*
+src.bak/
