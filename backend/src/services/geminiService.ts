@@ -225,8 +225,17 @@ export function isHallucination(text: string): boolean {
 
   if (patterns.some((p) => normalized.includes(p))) return true;
 
-  // Une transcription d'un seul caractère ou vide de sens
-  if (normalized.length <= 2) return true;
+  // Le test de longueur ne vaut QUE pour l'alphabet latin.
+  //
+  // `normalized` a supprimé tout ce qui n'est pas [a-z0-9], donc une
+  // transcription en arabe, chinois, japonais, russe, grec, hébreu, thaï,
+  // hindi ou coréen s'y réduit à une chaîne vide. L'appliquer telle quelle
+  // rejetait toutes ces langues, même parfaitement transcrites.
+  //
+  // On mesure donc le texte d'origine, une fois retirés les espaces et la
+  // ponctuation, sans présumer de son écriture.
+  const meaningful = text.replace(/[\s\p{P}\p{S}]/gu, '');
+  if (meaningful.length <= 2) return true;
 
   return false;
 }
