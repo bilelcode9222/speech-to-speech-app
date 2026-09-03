@@ -144,6 +144,15 @@ function validate(request: TranslationRequest): void {
   if (!isSupported(request.sourceLanguage)) {
     throw new StageError('unknown', `Langue source non supportée : ${request.sourceLanguage}`);
   }
+  // L'API de transcription n'accepte que les 57 langues documentées.
+  // Un code hors liste renvoie 400 : « Language 'si' is not supported ».
+  // 'auto' reste valide : le paramètre n'est alors pas envoyé.
+  if (request.sourceLanguage !== 'auto' && !canBeTarget(request.sourceLanguage)) {
+    throw new StageError(
+      'unknown',
+      `Langue source non acceptée par OpenAI : ${request.sourceLanguage}`
+    );
+  }
   if (request.targetLanguage === 'auto') {
     throw new StageError('unknown', 'La langue cible doit être explicite.');
   }

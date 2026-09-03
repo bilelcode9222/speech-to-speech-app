@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bilelzouaoui.neviai",
@@ -33,7 +32,6 @@
         }
       ],
       "expo-asset",
-      "react-native-audio-api",
       "expo-localization"
     ],
     "extra": {

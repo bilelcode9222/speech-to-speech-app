@@ -1,6 +1,6 @@
 import { getLocales } from 'expo-localization';
 import { create } from 'zustand';
-import { canBeTarget } from '../constants/languages';
+import { canBeSource, canBeTarget } from '../constants/languages';
 import { Exchange } from '../types';
 import { ThemeName } from '../theme/tokens';
 
@@ -68,6 +68,11 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       if (code === 'auto') {
         return { sourceLanguage: 'auto' };
+      }
+
+      // L'API rejette les codes hors des 57 : ne jamais les accepter.
+      if (!canBeSource(code)) {
+        return {};
       }
 
       if (state.targetLanguage === code) {

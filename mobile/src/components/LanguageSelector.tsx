@@ -3,9 +3,8 @@ import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native
 import {
   canBeTarget,
   findLanguage,
-  LANGUAGES,
   Language,
-  TARGET_LANGUAGES,
+  SUPPORTED_LANGUAGES,
 } from '../constants/languages';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette, radius, spacing, type } from '../theme/tokens';
@@ -42,8 +41,11 @@ export function LanguageSelector({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [picking, setPicking] = useState<'source' | 'target' | null>(null);
 
+  // L'API refuse les codes hors des 57 supportées, y compris en source.
+  // Les autres langues restent joignables via 'auto', qui n'envoie aucun
+  // code et laisse Whisper deviner.
   const sourceLanguages = useMemo(
-    () => [AUTO_LANGUAGE, ...LANGUAGES],
+    () => [AUTO_LANGUAGE, ...SUPPORTED_LANGUAGES],
     [],
   );
 
@@ -74,7 +76,7 @@ export function LanguageSelector({
 
   // La cible n'expose que les langues dotées d'une voix : traduire vers
   // une langue qu'on ne sait pas prononcer n'a pas de sens ici.
-  const list = picking === 'source' ? sourceLanguages : TARGET_LANGUAGES;
+  const list = picking === 'source' ? sourceLanguages : SUPPORTED_LANGUAGES;
 
   // Échanger source et cible n'a de sens que si la source peut devenir
   // une cible valide. 'auto' est géré séparément par le store.

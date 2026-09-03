@@ -139,11 +139,19 @@ export const LANGUAGES: Language[] = [
 ];
 
 /**
- * Langues proposées comme cible. Seules celles dotées d'une voix fiable :
- * traduire vers une langue qu'on ne sait pas prononcer n'a pas de sens
- * dans une application vocale.
+ * Langues réellement utilisables, en source comme en cible.
+ *
+ * L'API OpenAI n'accepte que 57 langues, aussi bien pour le paramètre
+ * `language` de la transcription que pour la voix. Choisir le singhalais
+ * en source provoquait une erreur 400 : « Language 'si' is not supported ».
+ *
+ * Les 43 autres restent atteignables par la détection automatique : le
+ * backend omet alors le paramètre et Whisper devine librement.
  */
-export const TARGET_LANGUAGES: Language[] = LANGUAGES.filter((l) => l.tts);
+export const SUPPORTED_LANGUAGES: Language[] = LANGUAGES.filter((l) => l.tts);
+
+/** Alias historique : source et cible partagent désormais la même liste. */
+export const TARGET_LANGUAGES: Language[] = SUPPORTED_LANGUAGES;
 
 export function findLanguage(code: string): Language {
   return LANGUAGES.find((l) => l.code === code) || LANGUAGES[0];
@@ -151,5 +159,10 @@ export function findLanguage(code: string): Language {
 
 /** Une langue peut-elle servir de cible ? */
 export function canBeTarget(code: string): boolean {
-  return TARGET_LANGUAGES.some((l) => l.code === code);
+  return SUPPORTED_LANGUAGES.some((l) => l.code === code);
+}
+
+/** Une langue peut-elle être envoyée comme source explicite ? */
+export function canBeSource(code: string): boolean {
+  return code === 'auto' || canBeTarget(code);
 }
