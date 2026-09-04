@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Traduction vocale — Nevi AI",
-    "slug": "nevi",
+    "slug": "voix-traduction",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -38,6 +38,7 @@
       "eas": {
         "projectId": "82f90eae-81dc-4094-b442-9917a991bd34"
       }
-    }
+    },
+    "owner": "bibi9213"
   }
 }
