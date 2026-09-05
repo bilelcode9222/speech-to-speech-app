@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ConversationScreen } from './src/screens/ConversationScreen';
 import { SplashScreen } from './src/components/SplashScreen';
 import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
+import { configureRevenueCat } from './src/services/revenueCat';
 
 function Root() {
   const { name } = useTheme();
@@ -16,6 +17,10 @@ function Root() {
 }
 
 export default function App() {
+  useEffect(() => {
+    void configureRevenueCat();
+  }, []);
+
   // L'écran d'ouverture reste monté par-dessus l'app jusqu'à la fin de
   // l'animation. L'app se charge en dessous pendant ce temps, donc rien
   // n'est perdu : l'attente devient l'animation.

@@ -8,6 +8,13 @@ import { LanguageSelector } from '../components/LanguageSelector';
 import { Logo } from '../components/Logo';
 import { RecordButton } from '../components/RecordButton';
 import { TranscriptBubble } from '../components/TranscriptBubble';
+import { Paywall } from '../components/Paywall';
+import {
+  FREE_TRANSLATION_LIMIT,
+  getFreeTranslationCount,
+  incrementFreeTranslationCount,
+} from '../services/freeUsage';
+import { hasPremiumEntitlement } from '../services/revenueCat';
 import { MAX_RECORDING_MS, SERVER_URL } from '../constants/config';
 import { useTranslationSocket } from '../hooks/useTranslationSocket';
 import { useSilenceDetection } from '../hooks/useSilenceDetection';
@@ -37,6 +44,10 @@ export function ConversationScreen() {
   const [micReady, setMicReady] = useState(false);
   const [faceToFace, setFaceToFace] = useState(false);
   const [faceToFaceAutoSide, setFaceToFaceAutoSide] = useState<Side>('bottom');
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [freeTranslationCount, setFreeTranslationCount] = useState(0);
+  const [isPremium, setIsPremium] = useState(false);
+  const countedCompletedExchanges = useRef<Set<string>>(new Set());
   // Cote actif en face-a-face, pour accorder la zone securisee du haut
   const [activeTop, setActiveTop] = useState(false);
   const autoStop = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,6 +71,50 @@ export function ConversationScreen() {
   } = useAppStore();
 
   useTranslationSocket();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([
+      getFreeTranslationCount(),
+      hasPremiumEntitlement().catch(() => false),
+    ]).then(([count, premium]) => {
+      if (cancelled) return;
+      setFreeTranslationCount(count);
+      setIsPremium(premium);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isPremium) return;
+
+    const newlyCompleted = exchanges.filter(
+      (exchange) =>
+        exchange.status === 'done' &&
+        !countedCompletedExchanges.current.has(exchange.id),
+    );
+
+    if (newlyCompleted.length === 0) return;
+
+    newlyCompleted.forEach((exchange) => {
+      countedCompletedExchanges.current.add(exchange.id);
+    });
+
+    void (async () => {
+      let count = freeTranslationCount;
+
+      for (let index = 0; index < newlyCompleted.length; index += 1) {
+        if (count >= FREE_TRANSLATION_LIMIT) break;
+        count = await incrementFreeTranslationCount();
+      }
+
+      setFreeTranslationCount(count);
+    })();
+  }, [exchanges, freeTranslationCount, isPremium]);
 
   // Arrêt automatique après un silence : plus besoin d'appuyer une
   // seconde fois pour envoyer.
@@ -159,15 +214,29 @@ export function ConversationScreen() {
       if (busyToggling.current) return;
       busyToggling.current = true;
       try {
-        if (isRecording) await stopRecording();
-        else await startRecording(side, from, to);
+        if (isRecording) {
+          await stopRecording();
+        } else {
+          if (!isPremium && freeTranslationCount >= FREE_TRANSLATION_LIMIT) {
+            setPaywallOpen(true);
+            return;
+          }
+
+          await startRecording(side, from, to);
+        }
       } finally {
         setTimeout(() => {
           busyToggling.current = false;
         }, 300);
       }
     },
-    [isRecording, startRecording, stopRecording]
+    [
+      isRecording,
+      startRecording,
+      stopRecording,
+      isPremium,
+      freeTranslationCount,
+    ]
   );
 
   const handleFaceToFaceSwap = useCallback(() => {
@@ -264,6 +333,15 @@ export function ConversationScreen() {
         </View>
 
         <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => setPaywallOpen(true)}
+              hitSlop={10}
+              style={styles.proButton}
+              accessibilityRole="button"
+              accessibilityLabel="Ouvrir Nevi Pro"
+            >
+              <Text style={styles.proButtonText}>PRO</Text>
+            </Pressable>
           <Pressable
             onPress={() => setFaceToFace((v) => !v)}
             hitSlop={10}
@@ -353,7 +431,12 @@ export function ConversationScreen() {
           </View>
         </>
       )}
-    </SafeAreaView>
+    <Paywall
+          visible={paywallOpen}
+          onClose={() => setPaywallOpen(false)}
+          onPremiumActivated={() => setIsPremium(true)}
+        />
+      </SafeAreaView>
   );
 }
 
@@ -375,6 +458,54 @@ function createStyles(colors: Palette) {
     statusText: { fontSize: 12, color: colors.textMuted },
 
     headerActions: { flexDirection: 'row', gap: spacing.sm },
+
+
+    proButton: {
+
+
+      height: 34,
+
+
+      paddingHorizontal: 11,
+
+
+      borderRadius: 17,
+
+
+      alignItems: 'center',
+
+
+      justifyContent: 'center',
+
+
+      backgroundColor: colors.accentSoft,
+
+
+      borderWidth: StyleSheet.hairlineWidth,
+
+
+      borderColor: colors.accent,
+
+
+    },
+
+
+    proButtonText: {
+
+
+      fontSize: 11,
+
+
+      fontWeight: '800',
+
+
+      letterSpacing: 0.7,
+
+
+      color: colors.accent,
+
+
+    },
     iconButton: {
       width: 34,
       height: 34,

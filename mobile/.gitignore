@@ -9,3 +9,6 @@ android/
 
 ios/
 android/
+
+.env
+*.bak*
