@@ -13,34 +13,6 @@ interface RevenueCatSubscriberResponse {
   };
 }
 
-interface RevenueCatOfferingPackage {
-  identifier?: string;
-  platform_product_identifier?: string;
-}
-
-interface RevenueCatOffering {
-  identifier?: string;
-  packages?: RevenueCatOfferingPackage[];
-}
-
-interface RevenueCatOfferingsResponse {
-  current_offering_id?: string | null;
-  offerings?: RevenueCatOffering[];
-}
-
-export interface RevenueCatCatalog {
-  available: boolean;
-  currentOfferingId: string | null;
-  offerings: Array<{
-    identifier: string;
-    packages: Array<{
-      identifier: string;
-      productIdentifier: string;
-    }>;
-  }>;
-  error?: string;
-}
-
 interface CacheEntry {
   premium: boolean;
   checkedAt: number;
@@ -67,58 +39,6 @@ function entitlementIsActive(entitlement: RevenueCatEntitlement | undefined): bo
 
 export function invalidateRevenueCatCache(appUserId: string): void {
   cache.delete(appUserId);
-}
-
-export async function getRevenueCatCatalog(appUserId: string): Promise<RevenueCatCatalog> {
-  if (!config.revenueCat.apiKey) {
-    return {
-      available: false,
-      currentOfferingId: null,
-      offerings: [],
-      error: 'SERVER_KEY_MISSING',
-    };
-  }
-
-  try {
-    const response = await axios.get<RevenueCatOfferingsResponse>(
-      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(appUserId)}/offerings`,
-      {
-        headers: {
-          Authorization: `Bearer ${config.revenueCat.apiKey}`,
-          Accept: 'application/json',
-          'X-Platform': 'ios',
-        },
-        timeout: 8000,
-      }
-    );
-
-    const offerings = (response.data?.offerings ?? []).map((offering) => ({
-      identifier: offering.identifier ?? 'unknown',
-      packages: (offering.packages ?? [])
-        .filter((pkg) => Boolean(pkg.platform_product_identifier))
-        .map((pkg) => ({
-          identifier: pkg.identifier ?? 'unknown',
-          productIdentifier: pkg.platform_product_identifier as string,
-        })),
-    }));
-
-    return {
-      available: true,
-      currentOfferingId: response.data?.current_offering_id ?? null,
-      offerings,
-    };
-  } catch (error) {
-    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-    logger.warn(
-      `Catalogue RevenueCat indisponible${status ? ` (${status})` : ''}.`
-    );
-    return {
-      available: false,
-      currentOfferingId: null,
-      offerings: [],
-      error: status ? `HTTP_${status}` : 'REQUEST_FAILED',
-    };
-  }
 }
 
 export async function isPremiumSubscriber(appUserId: string): Promise<boolean> {
