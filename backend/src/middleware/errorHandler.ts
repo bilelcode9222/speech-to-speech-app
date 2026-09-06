@@ -10,8 +10,15 @@ export function errorHandler(
 ): void {
   logger.error('Erreur HTTP', error);
 
-  const stage = error instanceof StageError ? error.stage : 'unknown';
-  res.status(500).json({ stage, message: error.message });
+  if (error instanceof StageError) {
+    res.status(500).json({ stage: error.stage, message: error.message });
+    return;
+  }
+
+  res.status(500).json({
+    stage: 'unknown',
+    message: 'Une erreur interne est survenue. Réessaie dans quelques instants.',
+  });
 }
 
 export function notFoundHandler(req: Request, res: Response): void {
