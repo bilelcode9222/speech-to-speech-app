@@ -23,6 +23,7 @@ import { consumeRateLimit } from './security/rateLimit';
 
 const app = express();
 
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
@@ -41,8 +42,7 @@ app.get('/languages', (_req, res) => {
 /**
  * Bootstrap invisible de l'app : aucun compte utilisateur.
  * Le téléphone crée un identifiant d'installation aléatoire et reçoit un
- * jeton signé valable 7 jours. La signature empêche le client de fabriquer
- * ou modifier lui-même une session reconnue par le backend.
+ * jeton signé valable 7 jours.
  */
 app.post('/api/session', (req, res) => {
   const installationId = req.body?.installationId;
@@ -65,9 +65,20 @@ app.post('/api/session', (req, res) => {
 app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) => {
   try {
     const session = res.locals.anonymousSession as AnonymousSession;
-    const limit = consumeRateLimit(`translate:${session.installationId}`, 20, 60_000);
-    if (!limit.allowed) {
-      res.setHeader('Retry-After', Math.ceil(limit.retryAfterMs / 1000));
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const installationLimit = consumeRateLimit(
+      `translate-install:${session.installationId}`,
+      20,
+      60_000
+    );
+    const ipLimit = consumeRateLimit(`translate-ip:${ip}`, 60, 60_000);
+
+    if (!installationLimit.allowed || !ipLimit.allowed) {
+      const retryAfterMs = Math.max(
+        installationLimit.retryAfterMs,
+        ipLimit.retryAfterMs
+      );
+      res.setHeader('Retry-After', Math.ceil(retryAfterMs / 1000));
       res.status(429).json({ error: 'Trop de traductions. Patiente une minute.' });
       return;
     }
@@ -88,7 +99,6 @@ const io = new Server(server, {
   maxHttpBufferSize: 25 * 1024 * 1024,
 });
 
-// Toutes les connexions Socket.IO doivent présenter un jeton anonyme valide.
 io.use(requireAnonymousSocketSession);
 registerTranslationSocket(io);
 registerLiveSocket(io);
