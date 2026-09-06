@@ -58,6 +58,10 @@ interface Plan {
   trialEligible: boolean;
 }
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function packageMatches(pkg: PurchasesPackage, key: PlanKey): boolean {
   if (pkg.product.identifier === PRODUCT_IDS[key]) return true;
 
@@ -122,6 +126,12 @@ function uniqueProducts(products: PurchasesStoreProduct[]): PurchasesStoreProduc
   return [...byIdentifier.values()];
 }
 
+function missingProductIds(products: PurchasesStoreProduct[]): string[] {
+  return Object.values(PRODUCT_IDS).filter(
+    (identifier) => !products.some((product) => product.identifier === identifier),
+  );
+}
+
 export function Paywall({
   visible,
   onClose,
@@ -153,8 +163,6 @@ export function Paywall({
 
       let availablePackages: PurchasesPackage[] = [];
 
-      // Source principale : Offering RevenueCat. Une erreur d'Offering ne doit
-      // jamais empêcher le fallback StoreKit direct juste en dessous.
       try {
         const offerings = await Purchases.getOfferings();
         const currentPackages = offerings.current?.availablePackages ?? [];
@@ -177,37 +185,36 @@ export function Paywall({
 
       setPackages(availablePackages);
 
-      // Les produits présents dans l'Offering sont déjà de vrais produits
-      // StoreKit. On les garde, puis on demande aussi directement les trois IDs
-      // Apple connus afin de compléter tout package manquant.
-      const productsFromPackages = availablePackages.map((pkg) => pkg.product);
-      let directProducts: PurchasesStoreProduct[] = [];
+      let products = uniqueProducts(availablePackages.map((pkg) => pkg.product));
 
-      try {
-        directProducts = await Purchases.getProducts(Object.values(PRODUCT_IDS));
-      } catch (error) {
-        console.log('[RevenueCat] chargement direct StoreKit impossible', error);
+      // StoreKit peut mettre un court instant à rendre les produits disponibles
+      // sur TestFlight. On complète uniquement les IDs manquants et on retente
+      // brièvement avant de conclure qu'un prix est réellement indisponible.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const missing = missingProductIds(products);
+        if (missing.length === 0) break;
+
+        try {
+          const directProducts = await Purchases.getProducts(missing);
+          products = uniqueProducts([...products, ...directProducts]);
+        } catch (error) {
+          console.log(
+            `[RevenueCat] tentative StoreKit ${attempt + 1}/3 impossible`,
+            error,
+          );
+        }
+
+        if (missingProductIds(products).length > 0 && attempt < 2) {
+          await wait(700);
+        }
       }
 
-      const products = uniqueProducts([
-        ...productsFromPackages,
-        ...directProducts,
-      ]);
       setStoreProducts(products);
 
-      const missing = Object.values(PRODUCT_IDS).filter(
-        (identifier) => !products.some((product) => product.identifier === identifier),
-      );
-
+      const missing = missingProductIds(products);
       if (missing.length > 0) {
         console.log(
-          `[RevenueCat] Produits App Store non retournés : ${missing.join(', ')}`,
-        );
-      }
-
-      if (products.length === 0) {
-        console.log(
-          '[RevenueCat] Aucun produit App Store disponible via Offering ni via getProducts(). Vérifie la clé SDK publique iOS, le bundle id et les produits App Store Connect.',
+          `[RevenueCat] Produits App Store non retournés après retry : ${missing.join(', ')}`,
         );
       }
 
@@ -268,11 +275,12 @@ export function Paywall({
 
   const selectedPlan = plans.find((plan) => plan.key === selected) ?? plans[0];
 
-  const displayPrice = (plan: Plan) => plan.product?.priceString || '—';
+  const displayPrice = (plan: Plan) =>
+    plan.product?.priceString || (loadingProducts ? '…' : '—');
 
   const detail = (plan: Plan): string => {
     const product = plan.product;
-    if (!product) return copy.priceUnavailable;
+    if (!product) return loadingProducts ? copy.loadingPrices : copy.priceUnavailable;
 
     if (plan.key === 'annual') {
       const monthly = product.pricePerMonthString;
@@ -327,8 +335,6 @@ export function Paywall({
 
       const activated = await activateAfterVerifiedPurchase();
       if (!activated) {
-        // L'achat Apple est déjà confirmé. Ne jamais inviter implicitement à
-        // repayer : la restauration permet de resynchroniser sans second achat.
         Alert.alert(copy.restoreUnavailableTitle, copy.restoreFailedBody);
       }
     } catch (error: any) {
@@ -379,7 +385,9 @@ export function Paywall({
     : null;
 
   const buttonLabel = !selectedPlan.product
-    ? copy.subscriptionUnavailableTitle
+    ? loadingProducts
+      ? copy.loadingPrices
+      : copy.subscriptionUnavailableTitle
     : intro
       ? fill(copy.tryFreeTemplate, { trial: intro })
       : `${copy.continueLabel} — ${displayPrice(selectedPlan)}`;
@@ -389,7 +397,9 @@ export function Paywall({
         selectedPlan.key,
         copy,
       )}. ${copy.autoRenew}`
-    : copy.conditionsUnavailable;
+    : loadingProducts
+      ? copy.loadingPrices
+      : copy.conditionsUnavailable;
 
   return (
     <Modal
@@ -471,11 +481,11 @@ export function Paywall({
 
           <Pressable
             onPress={() => void handlePurchase()}
-            disabled={loading || !selectedPlan.product}
+            disabled={loading || loadingProducts || !selectedPlan.product}
             style={({ pressed }) => [
               styles.continueButton,
               pressed && styles.pressed,
-              (loading || !selectedPlan.product) && styles.disabled,
+              (loading || loadingProducts || !selectedPlan.product) && styles.disabled,
             ]}
           >
             {loading ? (
@@ -540,6 +550,9 @@ function createStyles(colors: Palette) {
     },
     content: {
       flexGrow: 1,
+      width: '100%',
+      maxWidth: 560,
+      alignSelf: 'center',
       paddingHorizontal: 24,
       paddingBottom: 24,
     },
