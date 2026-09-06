@@ -20,24 +20,8 @@ function requireEnv(key: string): string {
   return value;
 }
 
-/**
- * Qui transcrit et traduit.
- *
- * 'openai' : Whisper puis GPT. Deux appels, mais un service stable.
- * 'gemini' : un seul appel audio -> texte traduit. Plus rapide, mais les
- *            modèles en preview renvoient parfois des 500.
- * 'groq'   : Whisper puis Llama, chez Groq.
- */
 const provider = (process.env.AI_PROVIDER || 'openai') as 'openai' | 'gemini' | 'groq';
 
-/**
- * Qui produit la voix.
- *
- * 'openai'     : ~0,5 s, stable, 15 $ / million de caractères.
- * 'device'     : voix de l'iPhone. Gratuite, instantanée, qualité moyenne.
- * 'gemini'     : voix naturelle mais instable (503 en pic d'usage).
- * 'elevenlabs' : voix premium, douze fois le prix d'OpenAI.
- */
 const ttsProvider = (process.env.TTS_PROVIDER || 'openai') as
   | 'openai'
   | 'gemini'
@@ -51,13 +35,15 @@ export const config = {
   provider,
   ttsProvider,
 
+  // Secret uniquement serveur. Il signe les sessions anonymes de l'app.
+  // Utilise une longue valeur aléatoire en production (Render).
+  sessionSecret: requireEnv('ANONYMOUS_SESSION_SECRET'),
+
   openai: {
     apiKey: needsOpenAI ? requireEnv('OPENAI_API_KEY') : optionalEnv('OPENAI_API_KEY'),
     sttModel: process.env.OPENAI_STT_MODEL || 'whisper-1',
     llmModel: process.env.OPENAI_LLM_MODEL || 'gpt-4o-mini',
-    // tts-1 plutôt que tts-1-hd : moitié prix, et surtout plus rapide
     ttsModel: process.env.OPENAI_TTS_MODEL || 'tts-1',
-    // 9 voix : alloy, ash, coral, echo, fable, nova, onyx, sage, shimmer
     voice: process.env.OPENAI_VOICE || 'nova',
   },
 
