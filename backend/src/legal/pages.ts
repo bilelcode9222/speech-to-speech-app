@@ -1,7 +1,27 @@
+import { config } from '../config/env';
 import { PREMIUM_30_DAY_LIMIT, PREMIUM_DAILY_LIMIT } from '../security/accessControl';
 
 const APPLE_EULA = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 const CNIL_COMPLAINT = 'https://www.cnil.fr/fr/plaintes';
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function supportContact(): string {
+  const email = config.supportEmail.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return 'Le contact officiel de l’éditeur est celui publié dans la fiche App Store de Nevi et dans les informations réglementaires du fournisseur publiées par Apple.';
+  }
+
+  const safeEmail = escapeHtml(email);
+  return `Contact : <a href="mailto:${safeEmail}">${safeEmail}</a>`;
+}
 
 function page(title: string, body: string): string {
   return `<!doctype html>
@@ -41,7 +61,7 @@ export function supportPage(): string {
     <p>Nevi ne demande pas de compte utilisateur. Pour comprendre les données traitées, les finalités, les prestataires et vos droits, consultez la <a href="/privacy">Politique de confidentialité</a>.</p>
 
     <h2>Contact</h2>
-    <p>Le contact officiel de l’éditeur est celui publié dans la fiche App Store de Nevi et dans les informations réglementaires du fournisseur. Utilisez cette adresse de support pour toute demande technique, commerciale ou relative aux données.</p>
+    <p>${supportContact()}</p>
 
     <h2>Documents</h2>
     <p><a href="/terms">Conditions d’utilisation</a> · <a href="/privacy">Politique de confidentialité</a></p>
@@ -91,7 +111,7 @@ export function privacyPage(): string {
     <p>Cette politique explique les données traitées lorsque vous utilisez Nevi. Nevi ne demande pas de création de compte, d’adresse e-mail ou de mot de passe pour utiliser l’application.</p>
 
     <h2>Responsable du traitement</h2>
-    <p>Le responsable du traitement est l’éditeur légal de Nevi identifié dans la fiche App Store et dans les informations réglementaires du fournisseur publiées par Apple. Ses coordonnées officielles de support constituent le point de contact pour les demandes relatives aux données.</p>
+    <p>Le responsable du traitement est l’éditeur légal de Nevi identifié dans la fiche App Store et dans les informations réglementaires du fournisseur publiées par Apple. ${supportContact()}</p>
 
     <h2>Données traitées</h2>
     <p><strong>Audio du microphone.</strong> Lorsque vous lancez une traduction, l’audio enregistré est transmis au backend Nevi puis au fournisseur de traitement vocal/IA configuré afin de produire la transcription, la traduction et éventuellement la voix de sortie.</p>
@@ -126,7 +146,7 @@ export function privacyPage(): string {
     <p>Si vous estimez que vos droits ne sont pas respectés, vous pouvez saisir l’autorité de contrôle compétente. En France, vous pouvez notamment contacter la CNIL via <a href="${CNIL_COMPLAINT}">son service de plainte</a>.</p>
 
     <h2>Contact et demandes relatives aux données</h2>
-    <p>Utilisez le contact officiel de support publié dans la fiche App Store de Nevi ou consultez la page <a href="/support">Support Nevi</a>. L’éditeur pourra demander l’identifiant technique nécessaire pour retrouver les données concernées sans créer de compte utilisateur.</p>
+    <p>${supportContact()}</p>
     `
   );
 }
