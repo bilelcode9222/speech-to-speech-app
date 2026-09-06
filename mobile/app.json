@@ -7,10 +7,9 @@
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.bilelzouaoui.neviai",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Nevi utilise le microphone uniquement lorsque vous lancez une traduction vocale.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
@@ -37,12 +36,25 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Autoriser Nevi AI à utiliser le micro pour traduire ce que vous dites."
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone."
         }
       ],
       "expo-asset",
       "expo-localization"
     ],
+    "locales": {
+      "en": "./locales/en.json",
+      "fr": "./locales/fr.json",
+      "es": "./locales/es.json",
+      "de": "./locales/de.json",
+      "it": "./locales/it.json",
+      "pt": "./locales/pt.json",
+      "nl": "./locales/nl.json",
+      "ru": "./locales/ru.json",
+      "ar": "./locales/ar.json",
+      "zh": "./locales/zh.json",
+      "ja": "./locales/ja.json"
+    },
     "extra": {
       "eas": {
         "projectId": "82f90eae-81dc-4094-b442-9917a991bd34"
