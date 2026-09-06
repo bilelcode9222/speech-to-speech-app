@@ -19,6 +19,8 @@ import {
   subscribePremiumStatus,
   syncPremiumWithBackend,
 } from '../services/revenueCat';
+import { stopAudioPlayback } from '../services/audioPlayer';
+import { stopSpeaking } from '../services/deviceSpeech';
 import { MAX_RECORDING_MS, SERVER_URL } from '../constants/config';
 import { useTranslationSocket } from '../hooks/useTranslationSocket';
 import { useSilenceDetection } from '../hooks/useSilenceDetection';
@@ -149,9 +151,6 @@ export function ConversationScreen() {
 
     if (newlyCompleted.length === 0) return;
 
-    // Une traduction terminée pendant Premium ne doit jamais être recomptée
-    // plus tard comme traduction gratuite si l'abonnement expire dans la même
-    // session de l'app.
     newlyCompleted.forEach((exchange) => {
       countedCompletedExchanges.current.add(exchange.id);
     });
@@ -188,6 +187,8 @@ export function ConversationScreen() {
       }
 
       try {
+        // Ne jamais laisser la voix de Nevi rentrer dans le prochain micro.
+        await Promise.allSettled([stopAudioPlayback(), Promise.resolve(stopSpeaking())]);
         directionRef.current = { from, to };
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         await recorder.prepareToRecordAsync();
