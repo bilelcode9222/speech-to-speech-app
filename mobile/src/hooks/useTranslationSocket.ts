@@ -1,43 +1,53 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { getSocket } from '../services/socketService';
 import { playBase64Audio } from '../services/audioPlayer';
 import { speakText } from '../services/deviceSpeech';
 import { useAppStore } from '../store/appStore';
 import { PipelineErrorPayload, PipelineResult, SOCKET_EVENTS } from '../types';
+import { REQUEST_TIMEOUT_MS } from '../constants/config';
 
-/**
- * Délai au-delà duquel une traduction est abandonnée.
- *
- * Sans ce garde-fou, une requête sans réponse — serveur en veille, coupure
- * réseau, erreur silencieuse — laisse l'échange en attente indéfiniment. Le
- * bouton reste grisé sur "traduction en cours" et l'app devient inutilisable
- * jusqu'à un redémarrage complet.
- */
-const TIMEOUT_MS = 45_000;
+interface Options {
+  onAccessError?: (code: string, message: string) => void;
+}
 
-export function useTranslationSocket(): void {
+export function useTranslationSocket(options: Options = {}): {
+  armTimeout: (requestId: string) => void;
+} {
   const { updateExchange, setConnected } = useAppStore();
-
-  /** Un minuteur par requête en cours */
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const accessErrorRef = useRef(options.onAccessError);
+  accessErrorRef.current = options.onAccessError;
+
+  const clearTimer = useCallback((requestId: string) => {
+    const timer = timers.current.get(requestId);
+    if (timer) {
+      clearTimeout(timer);
+      timers.current.delete(requestId);
+    }
+  }, []);
+
+  const armTimeout = useCallback(
+    (requestId: string) => {
+      clearTimer(requestId);
+      const timer = setTimeout(() => {
+        timers.current.delete(requestId);
+        updateExchange(requestId, {
+          status: 'error',
+          errorMessage: "Le serveur n'a pas répondu. Réessaie.",
+        });
+      }, REQUEST_TIMEOUT_MS);
+      timers.current.set(requestId, timer);
+    },
+    [clearTimer, updateExchange],
+  );
 
   useEffect(() => {
     const socket = getSocket();
-
-    const clearTimer = (requestId: string) => {
-      const timer = timers.current.get(requestId);
-      if (timer) {
-        clearTimeout(timer);
-        timers.current.delete(requestId);
-      }
-    };
 
     const onConnect = () => setConnected(true);
 
     const onDisconnect = () => {
       setConnected(false);
-      // La connexion est perdue : toute requête en vol est perdue avec elle.
-      // On libère l'interface au lieu de la laisser figée.
       for (const [requestId, timer] of timers.current) {
         clearTimeout(timer);
         updateExchange(requestId, {
@@ -70,8 +80,6 @@ export function useTranslationSocket(): void {
         if (result.audioBase64) {
           await playBase64Audio(result.audioBase64, result.audioFormat || 'mp3');
         } else {
-          // Pas d'audio renvoyé : le serveur est en mode 'device', ou la voix
-          // a échoué et le repli s'est déclenché. L'iPhone prononce.
           const exchange = useAppStore
             .getState()
             .exchanges.find((e) => e.id === result.requestId);
@@ -82,9 +90,10 @@ export function useTranslationSocket(): void {
       }
     };
 
-    const onError = ({ requestId, message }: PipelineErrorPayload) => {
+    const onError = ({ requestId, message, code }: PipelineErrorPayload) => {
       clearTimer(requestId);
       updateExchange(requestId, { status: 'error', errorMessage: message });
+      if (code) accessErrorRef.current?.(code, message);
     };
 
     socket.on('connect', onConnect);
@@ -108,22 +117,7 @@ export function useTranslationSocket(): void {
       for (const timer of pending.values()) clearTimeout(timer);
       pending.clear();
     };
-  }, [updateExchange, setConnected]);
-}
+  }, [clearTimer, updateExchange, setConnected]);
 
-/**
- * Arme le minuteur d'abandon pour une requête.
- * À appeler depuis l'écran, juste après l'envoi au serveur.
- */
-export function armTimeout(
-  requestId: string,
-  updateExchange: (id: string, patch: Record<string, unknown>) => void
-): ReturnType<typeof setTimeout> {
-  return setTimeout(() => {
-    updateExchange(requestId, {
-      status: 'error',
-      errorMessage:
-        "Le serveur n'a pas répondu. Il était peut-être en veille — réessaie.",
-    });
-  }, TIMEOUT_MS);
+  return { armTimeout };
 }

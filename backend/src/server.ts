@@ -7,7 +7,6 @@ import { Server } from 'socket.io';
 import { config } from './config/env';
 import { logger } from './utils/logger';
 import { registerTranslationSocket } from './sockets/translationSocket';
-import { registerLiveSocket } from './sockets/liveSocket';
 import { runSpeechPipeline } from './pipeline/speechPipeline';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { LANGUAGES } from './utils/languages';
@@ -20,23 +19,42 @@ import {
   requireAnonymousSocketSession,
 } from './security/anonymousSession';
 import { consumeRateLimit } from './security/rateLimit';
+import {
+  accessMessage,
+  beginTranslation,
+  finishTranslation,
+  inspectAccess,
+  recordSuccessfulTranslation,
+} from './security/accessControl';
+import { invalidateRevenueCatCache } from './services/revenueCatService';
+import { privacyPage, termsPage } from './legal/pages';
 
 const app = express();
 
 app.set('trust proxy', 1);
 app.use(cors());
-app.use(express.json({ limit: '25mb' }));
+app.use(express.json({ limit: '12mb' }));
 
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     provider: config.provider,
     ttsProvider: config.ttsProvider,
+    durableUsageStore: Boolean(config.databaseUrl),
+    revenueCatServerVerification: Boolean(config.revenueCat.apiKey),
   });
 });
 
 app.get('/languages', (_req, res) => {
   res.json(LANGUAGES);
+});
+
+app.get('/privacy', (_req, res) => {
+  res.type('html').send(privacyPage());
+});
+
+app.get('/terms', (_req, res) => {
+  res.type('html').send(termsPage());
 });
 
 /**
@@ -62,10 +80,31 @@ app.post('/api/session', (req, res) => {
   res.json(issueAnonymousSession(installationId));
 });
 
-app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) => {
+app.get('/api/access', requireAnonymousHttpSession, async (_req, res, next) => {
   try {
     const session = res.locals.anonymousSession as AnonymousSession;
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    res.json(await inspectAccess(session.installationId));
+  } catch (error) {
+    next(error instanceof Error ? error : new Error(String(error)));
+  }
+});
+
+app.post('/api/access/refresh', requireAnonymousHttpSession, async (_req, res, next) => {
+  try {
+    const session = res.locals.anonymousSession as AnonymousSession;
+    invalidateRevenueCatCache(session.installationId);
+    res.json(await inspectAccess(session.installationId));
+  } catch (error) {
+    next(error instanceof Error ? error : new Error(String(error)));
+  }
+});
+
+app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) => {
+  const session = res.locals.anonymousSession as AnonymousSession;
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  let started = false;
+
+  try {
     const installationLimit = consumeRateLimit(
       `translate-install:${session.installationId}`,
       20,
@@ -79,14 +118,25 @@ app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) =
         ipLimit.retryAfterMs
       );
       res.setHeader('Retry-After', Math.ceil(retryAfterMs / 1000));
-      res.status(429).json({ error: 'Trop de traductions. Patiente une minute.' });
+      res.status(429).json({ code: 'RATE_LIMIT', error: 'Trop de traductions. Patiente une minute.' });
       return;
     }
 
+    const access = await beginTranslation(session.installationId);
+    if (!access.allowed) {
+      const status = access.code === 'PAYWALL_REQUIRED' ? 402 : 429;
+      res.status(status).json({ code: access.code, error: accessMessage(access.code), access });
+      return;
+    }
+    started = true;
+
     const result = await runSpeechPipeline(req.body as TranslationRequest);
+    await recordSuccessfulTranslation(session.installationId, access.premium);
     res.json(result);
   } catch (error) {
     next(error instanceof StageError ? error : new Error(String(error)));
+  } finally {
+    if (started) finishTranslation(session.installationId);
   }
 });
 
@@ -96,12 +146,13 @@ app.use(errorHandler);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
-  maxHttpBufferSize: 25 * 1024 * 1024,
+  maxHttpBufferSize: 12 * 1024 * 1024,
 });
 
 io.use(requireAnonymousSocketSession);
 registerTranslationSocket(io);
-registerLiveSocket(io);
+// Gemini Live n'est pas exposé en V1 : surface d'attaque et coûts inutiles
+// tant que le client mobile de production ne l'utilise pas.
 
 server.listen(config.port, '0.0.0.0', () => {
   logger.success(`Serveur démarré sur le port ${config.port}`);

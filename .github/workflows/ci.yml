@@ -1,0 +1,49 @@
+name: Nevi CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, release/appstore-hardening]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm install
+      - run: npm run check
+        env:
+          ANONYMOUS_SESSION_SECRET: ci-session-secret-long-enough-for-nevi
+          AI_PROVIDER: device
+          TTS_PROVIDER: device
+      - run: npm run build
+        env:
+          ANONYMOUS_SESSION_SECRET: ci-session-secret-long-enough-for-nevi
+          AI_PROVIDER: device
+          TTS_PROVIDER: device
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm install
+      - run: npm run check

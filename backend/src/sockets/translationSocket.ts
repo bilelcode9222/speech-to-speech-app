@@ -4,11 +4,18 @@ import { logger } from '../utils/logger';
 import { SOCKET_EVENTS, StageError, TranslationRequest } from '../types';
 import { socketInstallationId } from '../security/anonymousSession';
 import { consumeRateLimit } from '../security/rateLimit';
+import {
+  accessMessage,
+  beginTranslation,
+  finishTranslation,
+  recordSuccessfulTranslation,
+} from '../security/accessControl';
+import { socketClientIp } from '../utils/clientIp';
 
 export function registerTranslationSocket(io: Server): void {
   io.on('connection', (socket: Socket) => {
     const installationId = socketInstallationId(socket);
-    const ip = socket.handshake.address || 'unknown';
+    const ip = socketClientIp(socket);
     logger.info(`Client anonyme connecté : ${installationId.slice(0, 12)}…`);
 
     socket.on(SOCKET_EVENTS.TRANSLATE, async (payload: TranslationRequest) => {
@@ -24,12 +31,26 @@ export function registerTranslationSocket(io: Server): void {
         socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, {
           requestId,
           stage: 'unknown',
+          code: 'RATE_LIMIT',
           message: 'Trop de requêtes. Patiente une minute.',
         });
         return;
       }
 
+      let started = false;
       try {
+        const access = await beginTranslation(installationId);
+        if (!access.allowed) {
+          socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, {
+            requestId,
+            stage: 'unknown',
+            code: access.code,
+            message: accessMessage(access.code),
+          });
+          return;
+        }
+        started = true;
+
         const result = await runSpeechPipeline(payload, {
           onTranscription: (text) =>
             socket.emit(SOCKET_EVENTS.TRANSCRIPTION_READY, { requestId, text }),
@@ -37,6 +58,7 @@ export function registerTranslationSocket(io: Server): void {
             socket.emit(SOCKET_EVENTS.TRANSLATION_READY, { requestId, text }),
         });
 
+        await recordSuccessfulTranslation(installationId, access.premium);
         socket.emit(SOCKET_EVENTS.AUDIO_READY, result);
       } catch (error) {
         const stage = error instanceof StageError ? error.stage : 'unknown';
@@ -45,6 +67,10 @@ export function registerTranslationSocket(io: Server): void {
 
         logger.error(`Pipeline ${requestId} en échec (${stage})`, error);
         socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, { requestId, stage, message });
+      } finally {
+        // Le propriétaire de la traduction libère lui-même le verrou. Un simple
+        // disconnect d'un second socket ne doit jamais libérer la requête active.
+        if (started) finishTranslation(installationId);
       }
     });
 

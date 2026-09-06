@@ -9,6 +9,14 @@ function optionalEnv(key: string): string {
   return value;
 }
 
+function firstEnv(keys: string[]): string {
+  for (const key of keys) {
+    const value = optionalEnv(key);
+    if (value) return value;
+  }
+  return '';
+}
+
 function requireEnv(key: string): string {
   const value = optionalEnv(key);
   if (!value.trim()) {
@@ -38,6 +46,21 @@ export const config = {
   // Secret uniquement serveur. Il signe les sessions anonymes de l'app.
   // Utilise une longue valeur aléatoire en production (Render).
   sessionSecret: requireEnv('ANONYMOUS_SESSION_SECRET'),
+
+  // Optionnel en développement, mais requis pour un quota persistant en production.
+  databaseUrl: optionalEnv('DATABASE_URL'),
+
+  revenueCat: {
+    // Réutilise une éventuelle clé REST RevenueCat déjà présente sur Render.
+    // La clé publique iOS EXPO_PUBLIC_REVENUECAT_IOS_API_KEY n'est volontairement
+    // jamais utilisée ici : la validation d'abonnement appartient au serveur.
+    apiKey: firstEnv([
+      'REVENUECAT_SERVER_API_KEY',
+      'REVENUECAT_SECRET_API_KEY',
+      'REVENUECAT_API_KEY',
+    ]),
+    entitlementId: process.env.REVENUECAT_ENTITLEMENT_ID || 'premium',
+  },
 
   openai: {
     apiKey: needsOpenAI ? requireEnv('OPENAI_API_KEY') : optionalEnv('OPENAI_API_KEY'),
