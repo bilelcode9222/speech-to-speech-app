@@ -55,7 +55,7 @@ export function ConversationScreen() {
   const [activeTop, setActiveTop] = useState(false);
   const autoStop = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyToggling = useRef(false);
-  const premiumRecheckInFlight = useRef(false);
+  const premiumRecheckPromise = useRef<Promise<boolean> | null>(null);
   const startedAt = useRef<number>(0);
   const directionRef = useRef<{ from: string; to: string } | null>(null);
 
@@ -72,25 +72,28 @@ export function ConversationScreen() {
     updateExchange,
   } = useAppStore();
 
-  const recheckPremiumBeforePaywall = useCallback(async (): Promise<boolean> => {
-    if (premiumRecheckInFlight.current) return false;
-    premiumRecheckInFlight.current = true;
-    try {
+  const recheckPremiumBeforePaywall = useCallback((): Promise<boolean> => {
+    if (premiumRecheckPromise.current) return premiumRecheckPromise.current;
+
+    const check = (async () => {
       const premium = await syncPremiumWithBackend().catch(() => false);
       setIsPremium(premium);
       if (premium) setPaywallOpen(false);
       return premium;
-    } finally {
-      premiumRecheckInFlight.current = false;
-    }
+    })();
+
+    premiumRecheckPromise.current = check;
+    void check.finally(() => {
+      if (premiumRecheckPromise.current === check) {
+        premiumRecheckPromise.current = null;
+      }
+    });
+    return check;
   }, []);
 
   const { armTimeout } = useTranslationSocket({
     onAccessError: (code, message) => {
       if (code === 'PAYWALL_REQUIRED') {
-        // Une transaction App Store peut être visible sur l'iPhone quelques
-        // secondes avant RevenueCat côté serveur. On resynchronise avant de
-        // rouvrir le paywall pour éviter une boucle après achat.
         void recheckPremiumBeforePaywall().then((premium) => {
           if (!premium) {
             setIsPremium(false);
@@ -138,8 +141,6 @@ export function ConversationScreen() {
   }, []);
 
   useEffect(() => {
-    if (isPremium) return;
-
     const newlyCompleted = exchanges.filter(
       (exchange) =>
         exchange.status === 'done' &&
@@ -148,9 +149,14 @@ export function ConversationScreen() {
 
     if (newlyCompleted.length === 0) return;
 
+    // Une traduction terminée pendant Premium ne doit jamais être recomptée
+    // plus tard comme traduction gratuite si l'abonnement expire dans la même
+    // session de l'app.
     newlyCompleted.forEach((exchange) => {
       countedCompletedExchanges.current.add(exchange.id);
     });
+
+    if (isPremium) return;
 
     void (async () => {
       let count = freeTranslationCount;
@@ -235,9 +241,6 @@ export function ConversationScreen() {
 
       const audioFormat = formatFromUri(uri);
       const audioBase64 = await readRecordingAsBase64(uri);
-
-      // Le fichier local n'est plus nécessaire dès qu'il est chargé en mémoire.
-      await deleteRecording(uri).catch(() => {});
       uri = null;
 
       const socket = getSocket();
@@ -403,13 +406,15 @@ export function ConversationScreen() {
 
           <View style={styles.headerActions}>
             <Pressable
-              onPress={() => setPaywallOpen(true)}
+              onPress={isPremium ? undefined : () => setPaywallOpen(true)}
+              disabled={isPremium}
               hitSlop={10}
               style={styles.proButton}
               accessibilityRole="button"
-              accessibilityLabel="Ouvrir Nevi Pro"
+              accessibilityState={{ disabled: isPremium }}
+              accessibilityLabel={isPremium ? 'Nevi Pro actif' : 'Ouvrir Nevi Pro'}
             >
-              <Text style={styles.proButtonText}>PRO</Text>
+              <Text style={styles.proButtonText}>{isPremium ? 'PRO ✓' : 'PRO'}</Text>
             </Pressable>
             <Pressable
               onPress={() => setFaceToFace((v) => !v)}
