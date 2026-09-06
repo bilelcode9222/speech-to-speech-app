@@ -68,12 +68,13 @@ export function registerTranslationSocket(io: Server): void {
         logger.error(`Pipeline ${requestId} en échec (${stage})`, error);
         socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, { requestId, stage, message });
       } finally {
+        // Le propriétaire de la traduction libère lui-même le verrou. Un simple
+        // disconnect d'un second socket ne doit jamais libérer la requête active.
         if (started) finishTranslation(installationId);
       }
     });
 
     socket.on('disconnect', () => {
-      finishTranslation(installationId);
       logger.info(`Client anonyme déconnecté : ${installationId.slice(0, 12)}…`);
     });
   });
