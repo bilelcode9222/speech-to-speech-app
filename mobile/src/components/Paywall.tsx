@@ -10,7 +10,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import Purchases, { PurchasesPackage } from 'react-native-purchases';
+import Purchases, {
+  PurchasesPackage,
+  PurchasesStoreProduct,
+} from 'react-native-purchases';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette } from '../theme/tokens';
@@ -35,6 +38,12 @@ import {
 
 type PlanKey = 'annual' | 'monthly' | 'weekly';
 
+const PRODUCT_IDS: Record<PlanKey, string> = {
+  annual: 'neviai.pro.yearly',
+  monthly: 'neviai.pro.monthly',
+  weekly: 'neviai.pro.weekly',
+};
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -45,10 +54,13 @@ interface Plan {
   key: PlanKey;
   title: string;
   package: PurchasesPackage | null;
+  product: PurchasesStoreProduct | null;
   trialEligible: boolean;
 }
 
 function packageMatches(pkg: PurchasesPackage, key: PlanKey): boolean {
+  if (pkg.product.identifier === PRODUCT_IDS[key]) return true;
+
   const haystack = `${pkg.identifier} ${pkg.product.identifier}`.toLowerCase();
 
   if (key === 'annual') {
@@ -67,10 +79,10 @@ function packageMatches(pkg: PurchasesPackage, key: PlanKey): boolean {
 }
 
 function trialLabel(
-  pkg: PurchasesPackage | null,
+  product: PurchasesStoreProduct | null,
   copy: PaywallCopy,
 ): string | null {
-  const intro = pkg?.product.introPrice;
+  const intro = product?.introPrice;
   if (!intro || intro.price !== 0) return null;
 
   const count = intro.periodNumberOfUnits;
@@ -102,6 +114,14 @@ function uniquePackages(packages: PurchasesPackage[]): PurchasesPackage[] {
   return [...byProduct.values()];
 }
 
+function uniqueProducts(products: PurchasesStoreProduct[]): PurchasesStoreProduct[] {
+  const byIdentifier = new Map<string, PurchasesStoreProduct>();
+  for (const product of products) {
+    byIdentifier.set(product.identifier, product);
+  }
+  return [...byIdentifier.values()];
+}
+
 export function Paywall({
   visible,
   onClose,
@@ -114,6 +134,7 @@ export function Paywall({
   const insets = useSafeAreaInsets();
 
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const [storeProducts, setStoreProducts] = useState<PurchasesStoreProduct[]>([]);
   const [trialEligibility, setTrialEligibility] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<PlanKey>('annual');
   const [loading, setLoading] = useState(false);
@@ -125,47 +146,85 @@ export function Paywall({
       const ready = await configureRevenueCat();
       if (!ready) {
         setPackages([]);
+        setStoreProducts([]);
         setTrialEligibility({});
         return;
       }
 
-      const offerings = await Purchases.getOfferings();
-      const currentPackages = offerings.current?.availablePackages ?? [];
-      const everyOfferingPackages = Object.values(offerings.all ?? {}).flatMap(
-        (offering) => offering.availablePackages,
+      let availablePackages: PurchasesPackage[] = [];
+
+      // Source principale : Offering RevenueCat. Une erreur d'Offering ne doit
+      // jamais empêcher le fallback StoreKit direct juste en dessous.
+      try {
+        const offerings = await Purchases.getOfferings();
+        const currentPackages = offerings.current?.availablePackages ?? [];
+        const everyOfferingPackages = Object.values(offerings.all ?? {}).flatMap(
+          (offering) => offering.availablePackages,
+        );
+
+        availablePackages = uniquePackages(
+          currentPackages.length > 0 ? currentPackages : everyOfferingPackages,
+        );
+
+        if (currentPackages.length === 0 && availablePackages.length > 0) {
+          console.log(
+            '[RevenueCat] Offering courante vide : utilisation des packages présents dans les autres Offerings.',
+          );
+        }
+      } catch (error) {
+        console.log('[RevenueCat] chargement Offering impossible', error);
+      }
+
+      setPackages(availablePackages);
+
+      // Les produits présents dans l'Offering sont déjà de vrais produits
+      // StoreKit. On les garde, puis on demande aussi directement les trois IDs
+      // Apple connus afin de compléter tout package manquant.
+      const productsFromPackages = availablePackages.map((pkg) => pkg.product);
+      let directProducts: PurchasesStoreProduct[] = [];
+
+      try {
+        directProducts = await Purchases.getProducts(Object.values(PRODUCT_IDS));
+      } catch (error) {
+        console.log('[RevenueCat] chargement direct StoreKit impossible', error);
+      }
+
+      const products = uniqueProducts([
+        ...productsFromPackages,
+        ...directProducts,
+      ]);
+      setStoreProducts(products);
+
+      const missing = Object.values(PRODUCT_IDS).filter(
+        (identifier) => !products.some((product) => product.identifier === identifier),
       );
 
-      const available = uniquePackages(
-        currentPackages.length > 0 ? currentPackages : everyOfferingPackages,
-      );
-
-      if (currentPackages.length === 0 && available.length > 0) {
+      if (missing.length > 0) {
         console.log(
-          '[RevenueCat] Offering courante vide : utilisation des packages disponibles dans les autres Offerings.',
+          `[RevenueCat] Produits App Store non retournés : ${missing.join(', ')}`,
         );
       }
 
-      if (available.length === 0) {
+      if (products.length === 0) {
         console.log(
-          '[RevenueCat] Aucun package App Store disponible. Vérifie les produits iOS, leur entitlement premium et les Offerings RevenueCat.',
+          '[RevenueCat] Aucun produit App Store disponible via Offering ni via getProducts(). Vérifie la clé SDK publique iOS, le bundle id et les produits App Store Connect.',
         );
       }
-
-      setPackages(available);
 
       const entries = await Promise.all(
-        available.map(async (pkg) => {
-          if (!pkg.product.introPrice || pkg.product.introPrice.price !== 0) {
-            return [pkg.product.identifier, false] as const;
+        products.map(async (product) => {
+          if (!product.introPrice || product.introPrice.price !== 0) {
+            return [product.identifier, false] as const;
           }
-          const eligible = await isTrialEligible(pkg.product.identifier);
-          return [pkg.product.identifier, eligible] as const;
+          const eligible = await isTrialEligible(product.identifier);
+          return [product.identifier, eligible] as const;
         }),
       );
       setTrialEligibility(Object.fromEntries(entries));
     } catch (error) {
-      console.log('[RevenueCat] offres indisponibles', error);
+      console.log('[RevenueCat] produits indisponibles', error);
       setPackages([]);
+      setStoreProducts([]);
       setTrialEligibility({});
     } finally {
       setLoadingProducts(false);
@@ -182,14 +241,20 @@ export function Paywall({
 
     const makePlan = (key: PlanKey, title: string): Plan => {
       const pkg = getPackage(key);
+      const product =
+        pkg?.product ??
+        storeProducts.find((item) => item.identifier === PRODUCT_IDS[key]) ??
+        null;
+
       return {
         key,
         title,
         package: pkg,
+        product,
         trialEligible: Boolean(
-          pkg &&
-            trialEligibility[pkg.product.identifier] &&
-            trialLabel(pkg, copy),
+          product &&
+            trialEligibility[product.identifier] &&
+            trialLabel(product, copy),
         ),
       };
     };
@@ -199,14 +264,14 @@ export function Paywall({
       makePlan('monthly', copy.monthly),
       makePlan('weekly', copy.weekly),
     ];
-  }, [packages, trialEligibility, copy]);
+  }, [packages, storeProducts, trialEligibility, copy]);
 
   const selectedPlan = plans.find((plan) => plan.key === selected) ?? plans[0];
 
-  const displayPrice = (plan: Plan) => plan.package?.product.priceString || '—';
+  const displayPrice = (plan: Plan) => plan.product?.priceString || '—';
 
   const detail = (plan: Plan): string => {
-    const product = plan.package?.product;
+    const product = plan.product;
     if (!product) return copy.priceUnavailable;
 
     if (plan.key === 'annual') {
@@ -241,14 +306,17 @@ export function Paywall({
       return;
     }
 
-    if (!selectedPlan.package) {
+    if (!selectedPlan.product) {
       Alert.alert(copy.subscriptionUnavailableTitle, copy.pricesUnavailableBody);
       return;
     }
 
     setLoading(true);
     try {
-      const { customerInfo } = await Purchases.purchasePackage(selectedPlan.package);
+      const { customerInfo } = selectedPlan.package
+        ? await Purchases.purchasePackage(selectedPlan.package)
+        : await Purchases.purchaseStoreProduct(selectedPlan.product);
+
       const localPremium =
         customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined;
 
@@ -259,7 +327,9 @@ export function Paywall({
 
       const activated = await activateAfterVerifiedPurchase();
       if (!activated) {
-        Alert.alert(copy.purchaseFailedTitle, copy.purchaseFailedBody);
+        // L'achat Apple est déjà confirmé. Ne jamais inviter implicitement à
+        // repayer : la restauration permet de resynchroniser sans second achat.
+        Alert.alert(copy.restoreUnavailableTitle, copy.restoreFailedBody);
       }
     } catch (error: any) {
       if (!error?.userCancelled) {
@@ -304,15 +374,17 @@ export function Paywall({
     }
   };
 
-  const intro = selectedPlan.trialEligible ? trialLabel(selectedPlan.package, copy) : null;
+  const intro = selectedPlan.trialEligible
+    ? trialLabel(selectedPlan.product, copy)
+    : null;
 
-  const buttonLabel = !selectedPlan.package
+  const buttonLabel = !selectedPlan.product
     ? copy.subscriptionUnavailableTitle
     : intro
       ? fill(copy.tryFreeTemplate, { trial: intro })
       : `${copy.continueLabel} — ${displayPrice(selectedPlan)}`;
 
-  const renewalText = selectedPlan.package
+  const renewalText = selectedPlan.product
     ? `${intro ? `${intro}. ${copy.then} ` : ''}${displayPrice(selectedPlan)} ${periodSuffix(
         selectedPlan.key,
         copy,
@@ -358,7 +430,9 @@ export function Paywall({
           <View style={styles.plans}>
             {plans.map((plan) => {
               const active = selected === plan.key;
-              const planTrial = plan.trialEligible ? trialLabel(plan.package, copy) : null;
+              const planTrial = plan.trialEligible
+                ? trialLabel(plan.product, copy)
+                : null;
 
               return (
                 <Pressable
@@ -388,7 +462,7 @@ export function Paywall({
             })}
           </View>
 
-          {loadingProducts && packages.length === 0 && (
+          {loadingProducts && storeProducts.length === 0 && (
             <View style={styles.loadingRow}>
               <ActivityIndicator />
               <Text style={styles.loadingText}>{copy.loadingPrices}</Text>
@@ -397,11 +471,11 @@ export function Paywall({
 
           <Pressable
             onPress={() => void handlePurchase()}
-            disabled={loading || !selectedPlan.package}
+            disabled={loading || !selectedPlan.product}
             style={({ pressed }) => [
               styles.continueButton,
               pressed && styles.pressed,
-              (loading || !selectedPlan.package) && styles.disabled,
+              (loading || !selectedPlan.product) && styles.disabled,
             ]}
           >
             {loading ? (
