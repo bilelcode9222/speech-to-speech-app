@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -16,7 +17,15 @@ import { Palette } from '../theme/tokens';
 import {
   PREMIUM_ENTITLEMENT_ID,
   configureRevenueCat,
+  isTrialEligible,
+  syncPremiumWithBackend,
 } from '../services/revenueCat';
+import {
+  PREMIUM_30_DAY_LIMIT,
+  PREMIUM_DAILY_LIMIT,
+  PRIVACY_URL,
+  TERMS_URL,
+} from '../constants/config';
 
 type PlanKey = 'annual' | 'monthly' | 'weekly';
 
@@ -29,10 +38,8 @@ interface Props {
 interface Plan {
   key: PlanKey;
   title: string;
-  fallbackPrice: string;
-  detail: string;
-  trial: boolean;
   package: PurchasesPackage | null;
+  trialEligible: boolean;
 }
 
 function packageMatches(pkg: PurchasesPackage, key: PlanKey): boolean {
@@ -47,16 +54,44 @@ function packageMatches(pkg: PurchasesPackage, key: PlanKey): boolean {
   }
 
   if (key === 'monthly') {
-    return (
-      pkg.identifier === '$rc_monthly' ||
-      haystack.includes('month')
-    );
+    return pkg.identifier === '$rc_monthly' || haystack.includes('month');
   }
 
-  return (
-    pkg.identifier === '$rc_weekly' ||
-    haystack.includes('week')
-  );
+  return pkg.identifier === '$rc_weekly' || haystack.includes('week');
+}
+
+function formatCurrency(value: number, currencyCode: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: currencyCode,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return value.toFixed(2);
+  }
+}
+
+function trialLabel(pkg: PurchasesPackage | null): string | null {
+  const intro = pkg?.product.introPrice;
+  if (!intro || intro.price !== 0) return null;
+
+  const count = intro.periodNumberOfUnits;
+  const unit = String(intro.periodUnit).toUpperCase();
+  const words: Record<string, [string, string]> = {
+    DAY: ['jour', 'jours'],
+    WEEK: ['semaine', 'semaines'],
+    MONTH: ['mois', 'mois'],
+    YEAR: ['an', 'ans'],
+  };
+  const [single, plural] = words[unit] || ['jour', 'jours'];
+  return `${count} ${count === 1 ? single : plural} d’essai gratuit`;
+}
+
+function periodSuffix(key: PlanKey): string {
+  if (key === 'annual') return '/ an';
+  if (key === 'monthly') return '/ mois';
+  return '/ semaine';
 }
 
 export function Paywall({
@@ -68,6 +103,7 @@ export function Paywall({
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const [trialEligibility, setTrialEligibility] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<PlanKey>('annual');
   const [loading, setLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -78,14 +114,28 @@ export function Paywall({
       const ready = await configureRevenueCat();
       if (!ready) {
         setPackages([]);
+        setTrialEligibility({});
         return;
       }
 
       const offerings = await Purchases.getOfferings();
-      setPackages(offerings.current?.availablePackages ?? []);
+      const available = offerings.current?.availablePackages ?? [];
+      setPackages(available);
+
+      const entries = await Promise.all(
+        available.map(async (pkg) => {
+          if (!pkg.product.introPrice || pkg.product.introPrice.price !== 0) {
+            return [pkg.product.identifier, false] as const;
+          }
+          const eligible = await isTrialEligible(pkg.product.identifier);
+          return [pkg.product.identifier, eligible] as const;
+        }),
+      );
+      setTrialEligibility(Object.fromEntries(entries));
     } catch (error) {
       console.log('[RevenueCat] offres indisponibles', error);
       setPackages([]);
+      setTrialEligibility({});
     } finally {
       setLoadingProducts(false);
     }
@@ -101,47 +151,49 @@ export function Paywall({
     const getPackage = (key: PlanKey) =>
       packages.find((pkg) => packageMatches(pkg, key)) ?? null;
 
+    const makePlan = (key: PlanKey, title: string): Plan => {
+      const pkg = getPackage(key);
+      return {
+        key,
+        title,
+        package: pkg,
+        trialEligible: Boolean(
+          pkg && trialEligibility[pkg.product.identifier] && trialLabel(pkg),
+        ),
+      };
+    };
+
     return [
-      {
-        key: 'annual',
-        title: '1 an',
-        fallbackPrice: '49,99 €',
-        detail: '4,17 € / mois',
-        trial: true,
-        package: getPackage('annual'),
-      },
-      {
-        key: 'monthly',
-        title: '1 mois',
-        fallbackPrice: '9,99 €',
-        detail: '9,99 € / mois',
-        trial: true,
-        package: getPackage('monthly'),
-      },
-      {
-        key: 'weekly',
-        title: '1 semaine',
-        fallbackPrice: '4,99 €',
-        detail: '4,99 € / semaine',
-        trial: false,
-        package: getPackage('weekly'),
-      },
+      makePlan('annual', 'Yearly'),
+      makePlan('monthly', 'Monthly'),
+      makePlan('weekly', 'Weekly'),
     ];
-  }, [packages]);
+  }, [packages, trialEligibility]);
 
   const selectedPlan =
     plans.find((plan) => plan.key === selected) ?? plans[0];
 
-  const displayPrice = (plan: Plan) =>
-    plan.package?.product.priceString || plan.fallbackPrice;
+  const displayPrice = (plan: Plan) => plan.package?.product.priceString || '—';
+
+  const detail = (plan: Plan): string => {
+    const product = plan.package?.product;
+    if (!product) return 'Prix App Store indisponible';
+
+    if (plan.key === 'annual') {
+      const monthly = formatCurrency(product.price / 12, product.currencyCode);
+      return `≈ ${monthly} / mois`;
+    }
+    if (plan.key === 'monthly') return `${product.priceString} / mois`;
+    return `${product.priceString} / semaine`;
+  };
 
   const handlePurchase = async () => {
     const ready = await configureRevenueCat();
 
     if (!ready) {
       Alert.alert(
-        'RevenueCat à connecter',
-        'Ajoute la clé publique iOS RevenueCat dans EXPO_PUBLIC_REVENUECAT_IOS_API_KEY puis reconstruis l’app.',
+        'Abonnement indisponible',
+        'Les achats ne sont pas disponibles dans cette version de Nevi.',
       );
       return;
     }
@@ -149,7 +201,7 @@ export function Paywall({
     if (!selectedPlan.package) {
       Alert.alert(
         'Abonnement indisponible',
-        'RevenueCat ne renvoie pas encore ce produit. Vérifie que l’Offering courante contient Weekly, Monthly et Annual.',
+        'Les prix App Store ne sont pas disponibles pour le moment. Réessaie dans quelques instants.',
       );
       return;
     }
@@ -163,6 +215,7 @@ export function Paywall({
       if (
         customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined
       ) {
+        await syncPremiumWithBackend();
         onPremiumActivated?.();
         onClose();
       }
@@ -184,8 +237,8 @@ export function Paywall({
 
     if (!ready) {
       Alert.alert(
-        'RevenueCat à connecter',
-        'La restauration sera disponible dès que la clé publique RevenueCat sera configurée.',
+        'Restauration indisponible',
+        'Les achats ne sont pas disponibles dans cette version de Nevi.',
       );
       return;
     }
@@ -197,6 +250,7 @@ export function Paywall({
       if (
         customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined
       ) {
+        await syncPremiumWithBackend();
         onPremiumActivated?.();
         Alert.alert('Achat restauré', 'Nevi Pro est maintenant actif.');
         onClose();
@@ -217,9 +271,15 @@ export function Paywall({
     }
   };
 
-  const buttonLabel = selectedPlan.trial
-    ? 'Essayer 3 jours gratuits'
-    : `Continuer — ${displayPrice(selectedPlan)} / semaine`;
+  const intro = selectedPlan.trialEligible
+    ? trialLabel(selectedPlan.package)
+    : null;
+
+  const buttonLabel = !selectedPlan.package
+    ? 'Abonnement indisponible'
+    : intro
+      ? `Essayer ${intro.replace(' d’essai gratuit', '')} gratuitement`
+      : `Continuer — ${displayPrice(selectedPlan)}`;
 
   return (
     <Modal
@@ -255,13 +315,14 @@ export function Paywall({
           <Text style={styles.eyebrow}>NEVI PRO</Text>
           <Text style={styles.title}>Chaque langue,{`\n`}en direct.</Text>
           <Text style={styles.subtitle}>
-            Traduction vocale illimitée, mode face à face, voix naturelle et
+            Traduction vocale illimitée*, mode face à face, voix naturelle et
             bien plus encore.
           </Text>
 
           <View style={styles.plans}>
             {plans.map((plan) => {
               const active = selected === plan.key;
+              const planTrial = plan.trialEligible ? trialLabel(plan.package) : null;
 
               return (
                 <Pressable
@@ -276,15 +337,13 @@ export function Paywall({
                   <View style={styles.planBody}>
                     <View style={styles.planTop}>
                       <Text style={styles.planTitle}>{plan.title}</Text>
-                      {plan.trial && (
+                      {planTrial && (
                         <View style={styles.trialBadge}>
-                          <Text style={styles.trialText}>
-                            3 jours d’essai gratuit
-                          </Text>
+                          <Text style={styles.trialText}>{planTrial}</Text>
                         </View>
                       )}
                     </View>
-                    <Text style={styles.planDetail}>{plan.detail}</Text>
+                    <Text style={styles.planDetail}>{detail(plan)}</Text>
                   </View>
 
                   <Text style={styles.price}>{displayPrice(plan)}</Text>
@@ -304,11 +363,11 @@ export function Paywall({
 
           <Pressable
             onPress={() => void handlePurchase()}
-            disabled={loading}
+            disabled={loading || !selectedPlan.package}
             style={({ pressed }) => [
               styles.continueButton,
               pressed && styles.pressed,
-              loading && styles.disabled,
+              (loading || !selectedPlan.package) && styles.disabled,
             ]}
           >
             {loading ? (
@@ -319,11 +378,16 @@ export function Paywall({
           </Pressable>
 
           <Text style={styles.renewal}>
-            {selectedPlan.trial
-              ? `3 jours d’essai gratuit. Puis ${displayPrice(selectedPlan)} ${
-                  selected === 'annual' ? '/ an' : '/ mois'
-                }. Abonnement automatique. Annulable à tout moment.`
-              : 'Abonnement automatique. Annulable à tout moment.'}
+            {selectedPlan.package
+              ? `${intro ? `${intro}. Puis ` : ''}${displayPrice(selectedPlan)} ${periodSuffix(
+                  selectedPlan.key,
+                )}. Abonnement automatique. Annulable à tout moment.`
+              : 'Les prix et conditions d’abonnement seront affichés dès qu’ils seront disponibles depuis l’App Store.'}
+          </Text>
+
+          <Text style={styles.renewal}>
+            *Usage personnel raisonnable : jusqu’à {PREMIUM_DAILY_LIMIT} traductions
+            sur 24 h et {PREMIUM_30_DAY_LIMIT} sur 30 jours.
           </Text>
 
           <Pressable
@@ -336,7 +400,7 @@ export function Paywall({
 
           <View style={styles.features}>
             <View style={styles.featureColumn}>
-              <Text style={styles.feature}>✓  Traductions illimitées</Text>
+              <Text style={styles.feature}>✓  Traductions illimitées*</Text>
               <Text style={styles.feature}>✓  Traduisez en voyage</Text>
             </View>
             <View style={styles.featureColumn}>
@@ -346,9 +410,13 @@ export function Paywall({
           </View>
 
           <View style={styles.legalRow}>
-            <Text style={styles.legal}>Conditions</Text>
+            <Pressable onPress={() => void Linking.openURL(TERMS_URL)}>
+              <Text style={styles.legal}>Conditions</Text>
+            </Pressable>
             <Text style={styles.legalDot}>·</Text>
-            <Text style={styles.legal}>Confidentialité</Text>
+            <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}>
+              <Text style={styles.legal}>Confidentialité</Text>
+            </Pressable>
             <Text style={styles.legalDot}>·</Text>
             <Pressable onPress={() => void handleRestore()}>
               <Text style={styles.legal}>Restaurer</Text>
