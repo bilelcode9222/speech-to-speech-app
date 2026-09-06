@@ -11,14 +11,14 @@ import {
   View,
 } from 'react-native';
 import Purchases, { PurchasesPackage } from 'react-native-purchases';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette } from '../theme/tokens';
 import {
   PREMIUM_ENTITLEMENT_ID,
   configureRevenueCat,
   isTrialEligible,
-  syncPremiumWithBackend,
+  waitForPremiumBackendSync,
 } from '../services/revenueCat';
 import {
   PREMIUM_30_DAY_LIMIT,
@@ -109,8 +109,9 @@ export function Paywall({
 }: Props) {
   const { locale } = useTranslation();
   const copy = useMemo(() => getPaywallCopy(locale), [locale]);
-  const { colors, name: themeName } = useTheme();
+  const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
 
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
   const [trialEligibility, setTrialEligibility] = useState<Record<string, boolean>>({});
@@ -134,9 +135,6 @@ export function Paywall({
         (offering) => offering.availablePackages,
       );
 
-      // Current est normalement la bonne source. En secours, si RevenueCat a
-      // bien les produits mais qu'aucune Offering n'est marquée Current/Default,
-      // on utilise les packages présents dans les autres Offerings.
       const available = uniquePackages(
         currentPackages.length > 0 ? currentPackages : everyOfferingPackages,
       );
@@ -175,9 +173,7 @@ export function Paywall({
   }, []);
 
   useEffect(() => {
-    if (visible) {
-      void loadProducts();
-    }
+    if (visible) void loadProducts();
   }, [visible, loadProducts]);
 
   const plans = useMemo<Plan[]>(() => {
@@ -205,8 +201,7 @@ export function Paywall({
     ];
   }, [packages, trialEligibility, copy]);
 
-  const selectedPlan =
-    plans.find((plan) => plan.key === selected) ?? plans[0];
+  const selectedPlan = plans.find((plan) => plan.key === selected) ?? plans[0];
 
   const displayPrice = (plan: Plan) => plan.package?.product.priceString || '—';
 
@@ -224,37 +219,47 @@ export function Paywall({
     return `${product.priceString} ${copy.perWeek}`;
   };
 
+  const activateAfterVerifiedPurchase = async (): Promise<boolean> => {
+    const backendPremium = await waitForPremiumBackendSync();
+    if (!backendPremium) {
+      console.log(
+        '[RevenueCat] Achat présent sur l’appareil mais activation backend pas encore confirmée.',
+      );
+      return false;
+    }
+
+    onPremiumActivated?.();
+    onClose();
+    return true;
+  };
+
   const handlePurchase = async () => {
     const ready = await configureRevenueCat();
 
     if (!ready) {
-      Alert.alert(
-        copy.subscriptionUnavailableTitle,
-        copy.purchasesUnavailableBody,
-      );
+      Alert.alert(copy.subscriptionUnavailableTitle, copy.purchasesUnavailableBody);
       return;
     }
 
     if (!selectedPlan.package) {
-      Alert.alert(
-        copy.subscriptionUnavailableTitle,
-        copy.pricesUnavailableBody,
-      );
+      Alert.alert(copy.subscriptionUnavailableTitle, copy.pricesUnavailableBody);
       return;
     }
 
     setLoading(true);
     try {
-      const { customerInfo } = await Purchases.purchasePackage(
-        selectedPlan.package,
-      );
+      const { customerInfo } = await Purchases.purchasePackage(selectedPlan.package);
+      const localPremium =
+        customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined;
 
-      if (
-        customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined
-      ) {
-        await syncPremiumWithBackend();
-        onPremiumActivated?.();
-        onClose();
+      if (!localPremium) {
+        Alert.alert(copy.purchaseFailedTitle, copy.purchaseFailedBody);
+        return;
+      }
+
+      const activated = await activateAfterVerifiedPurchase();
+      if (!activated) {
+        Alert.alert(copy.purchaseFailedTitle, copy.purchaseFailedBody);
       }
     } catch (error: any) {
       if (!error?.userCancelled) {
@@ -277,16 +282,19 @@ export function Paywall({
     setLoading(true);
     try {
       const customerInfo = await Purchases.restorePurchases();
+      const localPremium =
+        customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined;
 
-      if (
-        customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined
-      ) {
-        await syncPremiumWithBackend();
-        onPremiumActivated?.();
-        Alert.alert(copy.restoreSuccessTitle, copy.restoreSuccessBody);
-        onClose();
-      } else {
+      if (!localPremium) {
         Alert.alert(copy.noSubscriptionTitle, copy.noSubscriptionBody);
+        return;
+      }
+
+      const activated = await activateAfterVerifiedPurchase();
+      if (activated) {
+        Alert.alert(copy.restoreSuccessTitle, copy.restoreSuccessBody);
+      } else {
+        Alert.alert(copy.restoreFailedTitle, copy.restoreFailedBody);
       }
     } catch (error) {
       console.log('[RevenueCat] restauration impossible', error);
@@ -296,9 +304,7 @@ export function Paywall({
     }
   };
 
-  const intro = selectedPlan.trialEligible
-    ? trialLabel(selectedPlan.package, copy)
-    : null;
+  const intro = selectedPlan.trialEligible ? trialLabel(selectedPlan.package, copy) : null;
 
   const buttonLabel = !selectedPlan.package
     ? copy.subscriptionUnavailableTitle
@@ -320,18 +326,17 @@ export function Paywall({
       presentationStyle="fullScreen"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.screen} edges={['bottom']}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { paddingTop: Math.max(insets.top + 12, 24) },
+          ]}
+          contentInsetAdjustmentBehavior="never"
           bounces={false}
           showsVerticalScrollIndicator={false}
         >
-          <View
-            style={[
-              styles.topRow,
-              themeName === 'dark' && styles.topRowDark,
-            ]}
-          >
+          <View style={styles.topRow}>
             <Text style={styles.mic}>●</Text>
             <Pressable
               onPress={onClose}
@@ -353,9 +358,7 @@ export function Paywall({
           <View style={styles.plans}>
             {plans.map((plan) => {
               const active = selected === plan.key;
-              const planTrial = plan.trialEligible
-                ? trialLabel(plan.package, copy)
-                : null;
+              const planTrial = plan.trialEligible ? trialLabel(plan.package, copy) : null;
 
               return (
                 <Pressable
@@ -464,7 +467,6 @@ function createStyles(colors: Palette) {
     content: {
       flexGrow: 1,
       paddingHorizontal: 24,
-      paddingTop: 8,
       paddingBottom: 24,
     },
     topRow: {
@@ -472,9 +474,6 @@ function createStyles(colors: Palette) {
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: 34,
-    },
-    topRowDark: {
-      marginTop: 18,
     },
     mic: {
       fontSize: 24,
