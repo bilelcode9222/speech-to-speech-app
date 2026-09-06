@@ -10,8 +10,17 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.bilelzouaoui.neviai",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "L'application a besoin du micro pour enregistrer ce que vous dites et le traduire.",
+        "NSMicrophoneUsageDescription": "Nevi utilise le microphone uniquement lorsque vous lancez une traduction vocale.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          }
+        ]
       }
     },
     "android": {
