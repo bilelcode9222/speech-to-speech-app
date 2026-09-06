@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
-    "postbuild": "npm prune --omit=dev",
+    "postbuild": "npm prune --omit=dev && (npm audit --omit=dev --json || true)",
     "start": "node dist/server.js",
     "check": "tsc --noEmit"
   },
