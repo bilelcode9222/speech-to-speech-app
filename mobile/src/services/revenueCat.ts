@@ -6,6 +6,7 @@ import { refreshAccessStatus } from './accessService';
 export const PREMIUM_ENTITLEMENT_ID = 'premium';
 
 let configured = false;
+let configurationPromise: Promise<boolean> | null = null;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,6 +18,7 @@ export function isRevenueCatConfigured(): boolean {
 
 export async function configureRevenueCat(): Promise<boolean> {
   if (configured) return true;
+  if (configurationPromise) return configurationPromise;
 
   if (Platform.OS !== 'ios') {
     return false;
@@ -38,20 +40,27 @@ export async function configureRevenueCat(): Promise<boolean> {
     return false;
   }
 
-  try {
-    if (__DEV__) {
-      Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-    }
+  configurationPromise = (async () => {
+    try {
+      if (__DEV__) {
+        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+      }
 
-    Purchases.configure({ apiKey });
-    const installationId = await getInstallationId();
-    await Purchases.logIn(installationId);
-    configured = true;
-    return true;
-  } catch (error) {
-    console.log('[RevenueCat] configuration impossible', error);
-    return false;
-  }
+      Purchases.configure({ apiKey });
+      const installationId = await getInstallationId();
+      await Purchases.logIn(installationId);
+      configured = true;
+      return true;
+    } catch (error) {
+      console.log('[RevenueCat] configuration impossible', error);
+      configured = false;
+      return false;
+    } finally {
+      configurationPromise = null;
+    }
+  })();
+
+  return configurationPromise;
 }
 
 export function customerInfoIsPremium(customerInfo: CustomerInfo): boolean {
@@ -66,12 +75,6 @@ export async function hasPremiumEntitlement(): Promise<boolean> {
   return customerInfoIsPremium(customerInfo);
 }
 
-/**
- * Synchronise l'état RevenueCat iOS avec le backend Nevi.
- * Le backend est l'autorité lorsque joignable, car c'est lui qui autorise
- * réellement les traductions. Une panne locale RevenueCat ne doit cependant
- * pas empêcher de reconnaître un Premium déjà validé côté serveur.
- */
 export async function syncPremiumWithBackend(): Promise<boolean> {
   let localPremium = false;
   try {
@@ -89,11 +92,6 @@ export async function syncPremiumWithBackend(): Promise<boolean> {
   }
 }
 
-/**
- * Après un achat/restauration, RevenueCat côté appareil peut recevoir
- * l'entitlement quelques secondes avant l'API serveur. On attend donc que le
- * backend voie à son tour premium=true avant de fermer le paywall.
- */
 export async function waitForPremiumBackendSync(
   attempts = 10,
   delayMs = 1200,
