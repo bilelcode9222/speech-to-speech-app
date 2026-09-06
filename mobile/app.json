@@ -7,7 +7,7 @@
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.bilelzouaoui.neviai",
       "infoPlist": {
         "CFBundleAllowMixedLocalizations": true,
