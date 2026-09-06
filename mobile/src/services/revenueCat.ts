@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
-import Purchases, { LOG_LEVEL } from 'react-native-purchases';
+import Purchases, { CustomerInfo, LOG_LEVEL } from 'react-native-purchases';
 import { getInstallationId } from './anonymousSession';
+import { refreshAccessStatus } from './accessService';
 
 export const PREMIUM_ENTITLEMENT_ID = 'premium';
 
@@ -21,7 +22,7 @@ export async function configureRevenueCat(): Promise<boolean> {
 
   if (!apiKey) {
     console.log(
-      '[RevenueCat] EXPO_PUBLIC_REVENUECAT_IOS_API_KEY manquante. Le paywall reste visible mais les achats sont désactivés.',
+      '[RevenueCat] EXPO_PUBLIC_REVENUECAT_IOS_API_KEY manquante. Les achats sont désactivés.',
     );
     return false;
   }
@@ -31,11 +32,13 @@ export async function configureRevenueCat(): Promise<boolean> {
       Purchases.setLogLevel(LOG_LEVEL.DEBUG);
     }
 
-    // Aucun compte utilisateur : chaque installation possède simplement un
-    // identifiant local stable. RevenueCat peut ainsi rattacher l'abonnement
-    // à la même identité que celle utilisée par le backend.
+    // Configure d'abord RevenueCat en anonyme, puis logIn vers l'identifiant
+    // Nevi. Cette séquence permet à RevenueCat d'aliaser proprement les anciens
+    // utilisateurs anonymes déjà présents sur TestFlight au lieu de créer une
+    // identité parallèle lors de la migration.
+    Purchases.configure({ apiKey });
     const installationId = await getInstallationId();
-    Purchases.configure({ apiKey, appUserID: installationId });
+    await Purchases.logIn(installationId);
     configured = true;
     return true;
   } catch (error) {
@@ -44,10 +47,58 @@ export async function configureRevenueCat(): Promise<boolean> {
   }
 }
 
+export function customerInfoIsPremium(customerInfo: CustomerInfo): boolean {
+  return customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined;
+}
+
 export async function hasPremiumEntitlement(): Promise<boolean> {
   const ready = await configureRevenueCat();
   if (!ready) return false;
 
   const customerInfo = await Purchases.getCustomerInfo();
-  return customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined;
+  return customerInfoIsPremium(customerInfo);
+}
+
+export async function syncPremiumWithBackend(): Promise<boolean> {
+  const premium = await hasPremiumEntitlement();
+  try {
+    await refreshAccessStatus();
+  } catch (error) {
+    console.log('[RevenueCat] synchronisation backend impossible', error);
+  }
+  return premium;
+}
+
+export async function isTrialEligible(productIdentifier: string): Promise<boolean> {
+  const ready = await configureRevenueCat();
+  if (!ready || Platform.OS !== 'ios') return false;
+
+  try {
+    const eligibility = await Purchases.checkTrialOrIntroductoryPriceEligibility([
+      productIdentifier,
+    ]);
+    const item = eligibility[productIdentifier];
+    return (
+      item?.status ===
+      Purchases.INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE
+    );
+  } catch (error) {
+    console.log('[RevenueCat] éligibilité essai inconnue', error);
+    // Ne jamais promettre un essai lorsqu'on ne peut pas le confirmer.
+    return false;
+  }
+}
+
+export function subscribePremiumStatus(
+  listener: (premium: boolean) => void,
+): () => void {
+  const onCustomerInfo = (customerInfo: CustomerInfo) => {
+    listener(customerInfoIsPremium(customerInfo));
+    void refreshAccessStatus().catch(() => {});
+  };
+
+  Purchases.addCustomerInfoUpdateListener(onCustomerInfo);
+  return () => {
+    Purchases.removeCustomerInfoUpdateListener(onCustomerInfo);
+  };
 }
