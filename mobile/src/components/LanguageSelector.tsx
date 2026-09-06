@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   canBeTarget,
   findLanguage,
@@ -24,7 +25,6 @@ const AUTO_LANGUAGE: Language = {
   code: 'auto',
   label: 'Detect language',
   flag: '🌐',
-  // Jamais utilisé : 'auto' est refusé en cible.
   tts: false,
 };
 
@@ -38,12 +38,10 @@ export function LanguageSelector({
 }: Props) {
   const { t, locale } = useTranslation();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [picking, setPicking] = useState<'source' | 'target' | null>(null);
 
-  // L'API refuse les codes hors des 57 supportées, y compris en source.
-  // Les autres langues restent joignables via 'auto', qui n'envoie aucun
-  // code et laisse Whisper deviner.
   const sourceLanguages = useMemo(
     () => [AUTO_LANGUAGE, ...SUPPORTED_LANGUAGES],
     [],
@@ -74,12 +72,7 @@ export function LanguageSelector({
     setPicking(null);
   };
 
-  // La cible n'expose que les langues dotées d'une voix : traduire vers
-  // une langue qu'on ne sait pas prononcer n'a pas de sens ici.
   const list = picking === 'source' ? sourceLanguages : SUPPORTED_LANGUAGES;
-
-  // Échanger source et cible n'a de sens que si la source peut devenir
-  // une cible valide. 'auto' est géré séparément par le store.
   const canSwap = sourceCode === 'auto' || canBeTarget(sourceCode);
 
   return (
@@ -89,6 +82,8 @@ export function LanguageSelector({
           style={styles.chip}
           onPress={() => setPicking('source')}
           disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('spokenLanguage')}: ${displayLabel(source)}`}
         >
           <Text style={styles.chipLabel} numberOfLines={1}>
             {source.flag} {displayLabel(source)}
@@ -99,6 +94,8 @@ export function LanguageSelector({
           style={styles.swap}
           onPress={onSwap}
           disabled={disabled || !canSwap}
+          accessibilityRole="button"
+          accessibilityLabel={t('swapLanguages')}
         >
           <Text style={[styles.swapIcon, !canSwap && styles.swapIconOff]}>
             ⇄
@@ -109,6 +106,8 @@ export function LanguageSelector({
           style={styles.chip}
           onPress={() => setPicking('target')}
           disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('translateTo')}: ${displayLabel(target)}`}
         >
           <Text style={styles.chipLabel} numberOfLines={1}>
             {target.flag} {displayLabel(target)}
@@ -123,7 +122,10 @@ export function LanguageSelector({
         onRequestClose={() => setPicking(null)}
       >
         <Pressable style={styles.backdrop} onPress={() => setPicking(null)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.xl) }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.grabber} />
 
             <Text style={styles.sheetTitle}>
@@ -143,6 +145,8 @@ export function LanguageSelector({
                   <Pressable
                     style={styles.option}
                     onPress={() => select(item.code)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
                   >
                     <Text
                       style={[
@@ -198,7 +202,6 @@ function createStyles(colors: Palette) {
       borderTopLeftRadius: radius.lg,
       borderTopRightRadius: radius.lg,
       paddingHorizontal: spacing.sm,
-      paddingBottom: spacing.xl,
       paddingTop: spacing.sm,
     },
     grabber: {
