@@ -27,6 +27,16 @@ export async function configureRevenueCat(): Promise<boolean> {
     return false;
   }
 
+  // Une build TestFlight/App Store doit utiliser la clé publique iOS de l'app
+  // RevenueCat (habituellement appl_...), jamais la clé du Test Store (test_...).
+  // Sinon RevenueCat ne peut pas charger les produits réels de l'App Store.
+  if (!__DEV__ && apiKey.startsWith('test_')) {
+    console.log(
+      '[RevenueCat] Clé Test Store détectée en production. Utilise la clé SDK publique iOS de Traduction Vocale - Nevi AI.',
+    );
+    return false;
+  }
+
   try {
     if (__DEV__) {
       Purchases.setLogLevel(LOG_LEVEL.DEBUG);
