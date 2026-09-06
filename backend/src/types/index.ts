@@ -48,6 +48,7 @@ export interface PipelineErrorPayload {
   requestId: string;
   stage: PipelineStage;
   message: string;
+  code?: string;
 }
 
 export const SOCKET_EVENTS = {
