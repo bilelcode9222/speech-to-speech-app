@@ -60,11 +60,6 @@ app.get('/terms', (_req, res) => {
   res.type('html').send(termsPage());
 });
 
-/**
- * Bootstrap invisible de l'app : aucun compte utilisateur.
- * Le téléphone crée un identifiant d'installation aléatoire et reçoit un
- * jeton signé valable 7 jours.
- */
 app.post('/api/session', (req, res) => {
   const installationId = req.body?.installationId;
   if (!isValidInstallationId(installationId)) {
@@ -163,8 +158,6 @@ const io = new Server(server, {
 
 io.use(requireAnonymousSocketSession);
 registerTranslationSocket(io);
-// Gemini Live n'est pas exposé en V1 : surface d'attaque et coûts inutiles
-// tant que le client mobile de production ne l'utilise pas.
 
 server.listen(config.port, '0.0.0.0', () => {
   logger.success(`Serveur démarré sur le port ${config.port}`);
@@ -172,6 +165,10 @@ server.listen(config.port, '0.0.0.0', () => {
   for (const address of localAddresses()) {
     logger.info(`Réseau    : http://${address}:${config.port}/health`);
   }
+
+  void getRevenueCatCatalog('nevi-catalog-diagnostic').then((catalog) => {
+    logger.info(`RevenueCat catalog diagnostic: ${JSON.stringify(catalog)}`);
+  });
 });
 
 function localAddresses(): string[] {
