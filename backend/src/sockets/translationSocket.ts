@@ -1,36 +1,20 @@
 import { Server, Socket } from 'socket.io';
 import { runSpeechPipeline } from '../pipeline/speechPipeline';
 import { logger } from '../utils/logger';
-import {
-  SOCKET_EVENTS,
-  StageError,
-  TranslationRequest,
-} from '../types';
-
-/** Limite anti-abus : nombre de requêtes autorisées par minute et par client */
-const MAX_REQUESTS_PER_MINUTE = 20;
-const requestCounts = new Map<string, { count: number; resetAt: number }>();
-
-function isRateLimited(socketId: string): boolean {
-  const now = Date.now();
-  const entry = requestCounts.get(socketId);
-
-  if (!entry || now > entry.resetAt) {
-    requestCounts.set(socketId, { count: 1, resetAt: now + 60_000 });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > MAX_REQUESTS_PER_MINUTE;
-}
+import { SOCKET_EVENTS, StageError, TranslationRequest } from '../types';
+import { socketInstallationId } from '../security/anonymousSession';
+import { consumeRateLimit } from '../security/rateLimit';
 
 export function registerTranslationSocket(io: Server): void {
   io.on('connection', (socket: Socket) => {
-    logger.info(`Client connecté : ${socket.id}`);
+    const installationId = socketInstallationId(socket);
+    logger.info(`Client anonyme connecté : ${installationId.slice(0, 12)}…`);
 
     socket.on(SOCKET_EVENTS.TRANSLATE, async (payload: TranslationRequest) => {
       const requestId = payload?.requestId || 'inconnu';
+      const limit = consumeRateLimit(`translate:${installationId}`, 20, 60_000);
 
-      if (isRateLimited(socket.id)) {
+      if (!limit.allowed) {
         socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, {
           requestId,
           stage: 'unknown',
@@ -41,7 +25,6 @@ export function registerTranslationSocket(io: Server): void {
 
       try {
         const result = await runSpeechPipeline(payload, {
-          // Résultats intermédiaires : le texte apparaît avant la voix
           onTranscription: (text) =>
             socket.emit(SOCKET_EVENTS.TRANSCRIPTION_READY, { requestId, text }),
           onTranslation: (text) =>
@@ -60,8 +43,7 @@ export function registerTranslationSocket(io: Server): void {
     });
 
     socket.on('disconnect', () => {
-      requestCounts.delete(socket.id);
-      logger.info(`Client déconnecté : ${socket.id}`);
+      logger.info(`Client anonyme déconnecté : ${installationId.slice(0, 12)}…`);
     });
   });
 }
