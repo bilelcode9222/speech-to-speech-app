@@ -165,10 +165,6 @@ server.listen(config.port, '0.0.0.0', () => {
   for (const address of localAddresses()) {
     logger.info(`Réseau    : http://${address}:${config.port}/health`);
   }
-
-  void getRevenueCatCatalog('nevi-catalog-diagnostic').then((catalog) => {
-    logger.info(`RevenueCat catalog diagnostic: ${JSON.stringify(catalog)}`);
-  });
 });
 
 function localAddresses(): string[] {
