@@ -68,13 +68,18 @@ export async function hasPremiumEntitlement(): Promise<boolean> {
 
 /**
  * Synchronise l'état RevenueCat iOS avec le backend Nevi.
- * Quand le backend répond, son état est l'autorité car c'est lui qui autorise
- * réellement les traductions. Si le backend est temporairement injoignable,
- * on conserve l'état RevenueCat local pour ne pas transformer une panne réseau
- * en faux paywall.
+ * Le backend est l'autorité lorsque joignable, car c'est lui qui autorise
+ * réellement les traductions. Une panne locale RevenueCat ne doit cependant
+ * pas empêcher de reconnaître un Premium déjà validé côté serveur.
  */
 export async function syncPremiumWithBackend(): Promise<boolean> {
-  const localPremium = await hasPremiumEntitlement();
+  let localPremium = false;
+  try {
+    localPremium = await hasPremiumEntitlement();
+  } catch (error) {
+    console.log('[RevenueCat] lecture entitlement locale impossible', error);
+  }
+
   try {
     const access = await refreshAccessStatus();
     return access.premium;
@@ -90,14 +95,19 @@ export async function syncPremiumWithBackend(): Promise<boolean> {
  * backend voie à son tour premium=true avant de fermer le paywall.
  */
 export async function waitForPremiumBackendSync(
-  attempts = 6,
+  attempts = 10,
   delayMs = 1200,
 ): Promise<boolean> {
   const ready = await configureRevenueCat();
   if (!ready) return false;
 
-  const customerInfo = await Purchases.getCustomerInfo();
-  if (!customerInfoIsPremium(customerInfo)) return false;
+  try {
+    const customerInfo = await Purchases.getCustomerInfo();
+    if (!customerInfoIsPremium(customerInfo)) return false;
+  } catch (error) {
+    console.log('[RevenueCat] entitlement post-achat illisible', error);
+    return false;
+  }
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -140,17 +150,9 @@ export function subscribePremiumStatus(
   const onCustomerInfo = (customerInfo: CustomerInfo) => {
     const localPremium = customerInfoIsPremium(customerInfo);
 
-    if (!localPremium) {
-      listener(false);
-      void refreshAccessStatus().catch(() => {});
-      return;
-    }
-
-    // Ne déclare Premium dans l'UI qu'après confirmation serveur lorsque le
-    // backend est joignable. Cela évite la boucle achat -> paywall réouvert.
     void refreshAccessStatus()
       .then((access) => listener(access.premium))
-      .catch(() => listener(true));
+      .catch(() => listener(localPremium));
   };
 
   Purchases.addCustomerInfoUpdateListener(onCustomerInfo);
