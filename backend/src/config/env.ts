@@ -39,6 +39,15 @@ export const config = {
   // Utilise une longue valeur aléatoire en production (Render).
   sessionSecret: requireEnv('ANONYMOUS_SESSION_SECRET'),
 
+  // Optionnel en développement, mais requis pour un quota persistant en production.
+  databaseUrl: optionalEnv('DATABASE_URL'),
+
+  revenueCat: {
+    // Clé REST V1 RevenueCat côté serveur. Ne jamais l'inclure dans l'app mobile.
+    apiKey: optionalEnv('REVENUECAT_SERVER_API_KEY'),
+    entitlementId: process.env.REVENUECAT_ENTITLEMENT_ID || 'premium',
+  },
+
   openai: {
     apiKey: needsOpenAI ? requireEnv('OPENAI_API_KEY') : optionalEnv('OPENAI_API_KEY'),
     sttModel: process.env.OPENAI_STT_MODEL || 'whisper-1',
