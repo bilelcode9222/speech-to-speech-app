@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Backend d'orchestration STT -> Traduction -> TTS",
   "main": "dist/server.js",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
