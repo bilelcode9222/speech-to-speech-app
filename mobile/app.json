@@ -10,6 +10,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.bilelzouaoui.neviai",
       "infoPlist": {
+        "CFBundleAllowMixedLocalizations": true,
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
@@ -40,7 +41,15 @@
         }
       ],
       "expo-asset",
-      "expo-localization"
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "ios": ["en", "fr", "es", "de", "it", "pt", "nl", "ru", "ar", "zh", "ja"],
+            "android": ["en", "fr", "es", "de", "it", "pt", "nl", "ru", "ar", "zh", "ja"]
+          }
+        }
+      ]
     ],
     "locales": {
       "en": "./locales/en.json",
