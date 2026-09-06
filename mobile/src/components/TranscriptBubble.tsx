@@ -5,21 +5,19 @@ import { Palette, radius, spacing, type } from '../theme/tokens';
 import { Exchange } from '../types';
 import { findLanguage } from '../constants/languages';
 import { useTranslation } from '../i18n/useTranslation';
+import { getLanguageDisplayName } from '../i18n/languageDisplayNames';
 
-/**
- * Un échange = ce que tu as dit, puis sa traduction.
- *
- * La hiérarchie remplace la couleur : l'original reste petit et discret,
- * la traduction occupe l'espace et le contraste. Un filet vertical fin
- * relie les deux, comme un bloc cité dans Notion.
- */
 export function TranscriptBubble({ exchange }: { exchange: Exchange }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const source = findLanguage(exchange.sourceLanguage);
-  const target = findLanguage(exchange.targetLanguage);
+  const displayLanguage = (code: string): string => {
+    if (code === 'auto') return getLanguageDisplayName('auto', locale);
+    const fallback = findLanguage(code).label;
+    const translated = getLanguageDisplayName(code, locale);
+    return translated === code ? fallback : translated;
+  };
 
   if (exchange.status === 'error') {
     return (
@@ -36,28 +34,27 @@ export function TranscriptBubble({ exchange }: { exchange: Exchange }) {
 
       <View style={styles.content}>
         <View style={styles.block}>
-          <Text style={styles.label}>{source.label}</Text>
+          <Text style={styles.label}>{displayLanguage(exchange.sourceLanguage)}</Text>
           {exchange.originalText ? (
             <Text style={styles.original}>{exchange.originalText}</Text>
           ) : (
-            <Pending label="Transcription" colors={colors} />
+            <Pending label={t('translating')} colors={colors} />
           )}
         </View>
 
         <View style={styles.block}>
-          <Text style={styles.label}>{target.label}</Text>
+          <Text style={styles.label}>{displayLanguage(exchange.targetLanguage)}</Text>
           {exchange.translatedText ? (
             <Text style={styles.translated}>{exchange.translatedText}</Text>
           ) : (
-            <Pending label="Traduction" colors={colors} />
+            <Pending label={t('translating')} colors={colors} />
           )}
         </View>
 
         {exchange.timings && (
           <Text style={styles.timing}>
-            {(exchange.timings.total / 1000).toFixed(1)} s · transcription{' '}
-            {exchange.timings.stt} ms · traduction {exchange.timings.translation} ms · voix{' '}
-            {exchange.timings.tts} ms
+            {(exchange.timings.total / 1000).toFixed(1)} s · STT {exchange.timings.stt} ms · AI{' '}
+            {exchange.timings.translation} ms · TTS {exchange.timings.tts} ms
           </Text>
         )}
       </View>
