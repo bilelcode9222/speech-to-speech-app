@@ -12,6 +12,34 @@ import {
 } from '../security/accessControl';
 import { socketClientIp } from '../utils/clientIp';
 
+function publicPipelineMessage(error: unknown): string {
+  if (!(error instanceof StageError)) {
+    return 'Une erreur interne est survenue. Réessaie dans quelques instants.';
+  }
+
+  // Les erreurs de validation et d'absence de parole sont utiles à l'utilisateur.
+  // Les détails fournisseur (clé, quota, réponse API, modèle) restent uniquement
+  // dans les logs serveur et ne sont jamais exposés au client.
+  if (error.stage === 'unknown') return error.message;
+  if (
+    error.stage === 'stt' &&
+    (error.message.includes('Aucune parole détectée') ||
+      error.message.includes("L'audio reçu est vide"))
+  ) {
+    return error.message;
+  }
+  if (error.stage === 'stt') {
+    return 'La transcription est momentanément indisponible. Réessaie.';
+  }
+  if (error.stage === 'translation') {
+    return 'La traduction est momentanément indisponible. Réessaie.';
+  }
+  if (error.stage === 'tts') {
+    return 'La voix est momentanément indisponible. Réessaie.';
+  }
+  return 'Une erreur interne est survenue. Réessaie dans quelques instants.';
+}
+
 export function registerTranslationSocket(io: Server): void {
   io.on('connection', (socket: Socket) => {
     const installationId = socketInstallationId(socket);
@@ -62,13 +90,12 @@ export function registerTranslationSocket(io: Server): void {
         socket.emit(SOCKET_EVENTS.AUDIO_READY, result);
       } catch (error) {
         const stage = error instanceof StageError ? error.stage : 'unknown';
-        const message =
-          error instanceof StageError
-            ? error.message
-            : 'Une erreur interne est survenue. Réessaie dans quelques instants.';
-
         logger.error(`Pipeline ${requestId} en échec (${stage})`, error);
-        socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, { requestId, stage, message });
+        socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, {
+          requestId,
+          stage,
+          message: publicPipelineMessage(error),
+        });
       } finally {
         if (started) finishTranslation(installationId);
       }
