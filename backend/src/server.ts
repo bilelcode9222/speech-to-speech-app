@@ -26,7 +26,10 @@ import {
   inspectAccess,
   recordSuccessfulTranslation,
 } from './security/accessControl';
-import { invalidateRevenueCatCache } from './services/revenueCatService';
+import {
+  getRevenueCatCatalog,
+  invalidateRevenueCatCache,
+} from './services/revenueCatService';
 import { privacyPage, termsPage } from './legal/pages';
 
 const app = express();
@@ -94,6 +97,15 @@ app.post('/api/access/refresh', requireAnonymousHttpSession, async (_req, res, n
     const session = res.locals.anonymousSession as AnonymousSession;
     invalidateRevenueCatCache(session.installationId);
     res.json(await inspectAccess(session.installationId));
+  } catch (error) {
+    next(error instanceof Error ? error : new Error(String(error)));
+  }
+});
+
+app.get('/api/subscription/catalog', requireAnonymousHttpSession, async (_req, res, next) => {
+  try {
+    const session = res.locals.anonymousSession as AnonymousSession;
+    res.json(await getRevenueCatCatalog(session.installationId));
   } catch (error) {
     next(error instanceof Error ? error : new Error(String(error)));
   }
