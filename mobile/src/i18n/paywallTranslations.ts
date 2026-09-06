@@ -103,7 +103,7 @@ const fr: PaywallCopy = {
   restoreFailedTitle: 'Restauration impossible',
   restoreFailedBody: 'Impossible de restaurer les achats pour le moment.',
   continueLabel: 'Continuer',
-  tryFreeTemplate: 'Essayer {trial} gratuitement',
+  tryFreeTemplate: '{trial}',
   then: 'Puis',
   autoRenew: 'Abonnement automatique. Annulable à tout moment.',
   conditionsUnavailable: 'Les prix et conditions d’abonnement seront affichés dès qu’ils seront disponibles depuis l’App Store.',
@@ -115,7 +115,7 @@ const fr: PaywallCopy = {
   naturalVoice: 'Voix naturelle',
   terms: 'Conditions', privacy: 'Confidentialité', restore: 'Restaurer',
   perYear: '/ an', perMonth: '/ mois', perWeek: '/ semaine', approxPerMonth: '≈ {price} / mois',
-  freeTrialTemplate: '{count} {unit} d’essai gratuit',
+  freeTrialTemplate: 'Essai gratuit de {count} {unit}',
   day: ['jour', 'jours'], week: ['semaine', 'semaines'], month: ['mois', 'mois'], year: ['an', 'ans'],
 };
 
