@@ -17,6 +17,10 @@ export interface PipelineHooks {
   onTranslation?: (text: string) => void;
 }
 
+const ALLOWED_AUDIO_FORMATS = new Set(['m4a', 'mp4', 'mp3', 'wav', 'webm', 'ogg', 'flac']);
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+const MAX_REQUEST_ID_LENGTH = 120;
+
 export async function runSpeechPipeline(
   request: TranslationRequest,
   hooks: PipelineHooks = {}
@@ -101,13 +105,6 @@ export async function runSpeechPipeline(
   };
 }
 
-/**
- * Produit la voix, avec repli automatique.
- *
- * Si le fournisseur échoue, on renvoie une chaîne vide plutôt qu'une erreur :
- * le mobile prononce alors lui-même. Le texte est déjà affiché à ce stade —
- * mieux vaut une voix dégradée qu'un échec complet.
- */
 async function produceSpeech(
   text: string
 ): Promise<{ audioBase64: string; format: 'wav' | 'mp3'; durationMs: number }> {
@@ -138,30 +135,48 @@ async function produceSpeech(
 }
 
 function validate(request: TranslationRequest): void {
-  if (!request.audioBase64) {
+  if (!request || typeof request !== 'object') {
+    throw new StageError('unknown', 'Requête de traduction invalide.');
+  }
+  if (
+    typeof request.requestId !== 'string' ||
+    request.requestId.length < 1 ||
+    request.requestId.length > MAX_REQUEST_ID_LENGTH
+  ) {
+    throw new StageError('unknown', 'Identifiant de requête invalide.');
+  }
+  if (typeof request.audioBase64 !== 'string' || !request.audioBase64) {
     throw new StageError('unknown', 'Aucun audio reçu.');
   }
-  if (!isSupported(request.sourceLanguage)) {
+
+  // Estimation fiable de la taille binaire d'une chaîne base64 sans devoir
+  // allouer immédiatement un Buffer géant fourni par un client hostile.
+  const estimatedBytes = Math.floor((request.audioBase64.length * 3) / 4);
+  if (estimatedBytes > MAX_AUDIO_BYTES) {
+    throw new StageError('unknown', 'Enregistrement trop volumineux.');
+  }
+
+  if (
+    typeof request.audioFormat !== 'string' ||
+    !ALLOWED_AUDIO_FORMATS.has(request.audioFormat.toLowerCase())
+  ) {
+    throw new StageError('unknown', 'Format audio non supporté.');
+  }
+  if (typeof request.sourceLanguage !== 'string' || !isSupported(request.sourceLanguage)) {
     throw new StageError('unknown', `Langue source non supportée : ${request.sourceLanguage}`);
   }
-  // L'API de transcription n'accepte que les 57 langues documentées.
-  // Un code hors liste renvoie 400 : « Language 'si' is not supported ».
-  // 'auto' reste valide : le paramètre n'est alors pas envoyé.
   if (request.sourceLanguage !== 'auto' && !canBeTarget(request.sourceLanguage)) {
     throw new StageError(
       'unknown',
-      `Langue source non acceptée par OpenAI : ${request.sourceLanguage}`
+      `Langue source non acceptée par le fournisseur vocal : ${request.sourceLanguage}`
     );
   }
   if (request.targetLanguage === 'auto') {
     throw new StageError('unknown', 'La langue cible doit être explicite.');
   }
-  if (!isSupported(request.targetLanguage)) {
+  if (typeof request.targetLanguage !== 'string' || !isSupported(request.targetLanguage)) {
     throw new StageError('unknown', `Langue cible non supportée : ${request.targetLanguage}`);
   }
-  // Whisper transcrit 100 langues, la voix OpenAI n'en prononce que 57.
-  // Sur les autres l'API répond 200 avec un MP3 inaudible : il faut donc
-  // bloquer ici, aucune erreur ne sera levée plus loin.
   if (!canBeTarget(request.targetLanguage)) {
     throw new StageError(
       'unknown',
