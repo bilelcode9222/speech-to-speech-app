@@ -1,3 +1,5 @@
 {
-  "NSMicrophoneUsageDescription": "Nevi usa il microfono solo quando avvii una traduzione vocale."
+  "ios": {
+    "NSMicrophoneUsageDescription": "Nevi usa il microfono solo quando avvii una traduzione vocale."
+  }
 }
