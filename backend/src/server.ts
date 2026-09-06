@@ -12,31 +12,77 @@ import { runSpeechPipeline } from './pipeline/speechPipeline';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { LANGUAGES } from './utils/languages';
 import { StageError, TranslationRequest } from './types';
+import {
+  AnonymousSession,
+  isValidInstallationId,
+  issueAnonymousSession,
+  requireAnonymousHttpSession,
+  requireAnonymousSocketSession,
+} from './security/anonymousSession';
+import { consumeRateLimit } from './security/rateLimit';
 
 const app = express();
 
+app.set('trust proxy', 1);
 app.use(cors());
-// Les audios en base64 sont volumineux : on relève la limite par défaut (100 kb)
 app.use(express.json({ limit: '25mb' }));
 
-/** Vérification que le serveur tourne — ouvre cette URL dans ton navigateur */
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    sttModel: config.groq.sttModel,
-    llmModel: config.groq.llmModel,
-    ttsModel: config.elevenLabs.model,
+    provider: config.provider,
+    ttsProvider: config.ttsProvider,
   });
 });
 
-/** Liste des langues disponibles */
 app.get('/languages', (_req, res) => {
   res.json(LANGUAGES);
 });
 
-/** Alternative HTTP au WebSocket, pratique pour tester avec curl */
-app.post('/api/translate', async (req, res, next) => {
+/**
+ * Bootstrap invisible de l'app : aucun compte utilisateur.
+ * Le téléphone crée un identifiant d'installation aléatoire et reçoit un
+ * jeton signé valable 7 jours.
+ */
+app.post('/api/session', (req, res) => {
+  const installationId = req.body?.installationId;
+  if (!isValidInstallationId(installationId)) {
+    res.status(400).json({ error: "Identifiant d'installation invalide." });
+    return;
+  }
+
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const limit = consumeRateLimit(`session:${ip}`, 30, 60 * 60_000);
+  if (!limit.allowed) {
+    res.setHeader('Retry-After', Math.ceil(limit.retryAfterMs / 1000));
+    res.status(429).json({ error: 'Trop de créations de session.' });
+    return;
+  }
+
+  res.json(issueAnonymousSession(installationId));
+});
+
+app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) => {
   try {
+    const session = res.locals.anonymousSession as AnonymousSession;
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const installationLimit = consumeRateLimit(
+      `translate-install:${session.installationId}`,
+      20,
+      60_000
+    );
+    const ipLimit = consumeRateLimit(`translate-ip:${ip}`, 60, 60_000);
+
+    if (!installationLimit.allowed || !ipLimit.allowed) {
+      const retryAfterMs = Math.max(
+        installationLimit.retryAfterMs,
+        ipLimit.retryAfterMs
+      );
+      res.setHeader('Retry-After', Math.ceil(retryAfterMs / 1000));
+      res.status(429).json({ error: 'Trop de traductions. Patiente une minute.' });
+      return;
+    }
+
     const result = await runSpeechPipeline(req.body as TranslationRequest);
     res.json(result);
   } catch (error) {
@@ -50,9 +96,10 @@ app.use(errorHandler);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
-  maxHttpBufferSize: 25 * 1024 * 1024, // audios volumineux
+  maxHttpBufferSize: 25 * 1024 * 1024,
 });
 
+io.use(requireAnonymousSocketSession);
 registerTranslationSocket(io);
 registerLiveSocket(io);
 
@@ -62,10 +109,8 @@ server.listen(config.port, '0.0.0.0', () => {
   for (const address of localAddresses()) {
     logger.info(`Réseau    : http://${address}:${config.port}/health`);
   }
-  logger.info("Utilise l'adresse Réseau dans mobile/src/constants/config.ts");
 });
 
-/** Trouve l'IP de la machine sur le réseau local, pour que le téléphone la joigne */
 function localAddresses(): string[] {
   const results: string[] = [];
   for (const list of Object.values(os.networkInterfaces())) {
@@ -76,7 +121,6 @@ function localAddresses(): string[] {
   return results;
 }
 
-// Un plantage non géré ne doit pas tuer le serveur en silence
 process.on('unhandledRejection', (reason) => {
   logger.error('Promesse rejetée non gérée', reason);
 });

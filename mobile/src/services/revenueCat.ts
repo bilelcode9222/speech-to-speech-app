@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
+import { getInstallationId } from './anonymousSession';
 
 export const PREMIUM_ENTITLEMENT_ID = 'premium';
 
@@ -30,7 +31,11 @@ export async function configureRevenueCat(): Promise<boolean> {
       Purchases.setLogLevel(LOG_LEVEL.DEBUG);
     }
 
-    Purchases.configure({ apiKey });
+    // Aucun compte utilisateur : chaque installation possède simplement un
+    // identifiant local stable. RevenueCat peut ainsi rattacher l'abonnement
+    // à la même identité que celle utilisée par le backend.
+    const installationId = await getInstallationId();
+    Purchases.configure({ apiKey, appUserID: installationId });
     configured = true;
     return true;
   } catch (error) {
