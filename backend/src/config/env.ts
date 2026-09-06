@@ -43,6 +43,9 @@ export const config = {
   provider,
   ttsProvider,
 
+  // Contact public affiché sur les pages Support/Privacy lorsqu'il est défini.
+  supportEmail: optionalEnv('SUPPORT_EMAIL'),
+
   // Secret uniquement serveur. Il signe les sessions anonymes de l'app.
   // Utilise une longue valeur aléatoire en production (Render).
   sessionSecret: requireEnv('ANONYMOUS_SESSION_SECRET'),
