@@ -27,6 +27,13 @@ export interface PipelineErrorPayload {
   requestId: string;
   stage: 'stt' | 'translation' | 'tts' | 'unknown';
   message: string;
+  code?:
+    | 'PAYWALL_REQUIRED'
+    | 'FAIR_USE_DAILY_LIMIT'
+    | 'FAIR_USE_30_DAY_LIMIT'
+    | 'ALREADY_TRANSLATING'
+    | 'RATE_LIMIT'
+    | string;
 }
 
 export const SOCKET_EVENTS = {
