@@ -55,6 +55,7 @@ export function ConversationScreen() {
   const [activeTop, setActiveTop] = useState(false);
   const autoStop = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyToggling = useRef(false);
+  const premiumRecheckInFlight = useRef(false);
   const startedAt = useRef<number>(0);
   const directionRef = useRef<{ from: string; to: string } | null>(null);
 
@@ -71,11 +72,31 @@ export function ConversationScreen() {
     updateExchange,
   } = useAppStore();
 
+  const recheckPremiumBeforePaywall = useCallback(async (): Promise<boolean> => {
+    if (premiumRecheckInFlight.current) return false;
+    premiumRecheckInFlight.current = true;
+    try {
+      const premium = await syncPremiumWithBackend().catch(() => false);
+      setIsPremium(premium);
+      if (premium) setPaywallOpen(false);
+      return premium;
+    } finally {
+      premiumRecheckInFlight.current = false;
+    }
+  }, []);
+
   const { armTimeout } = useTranslationSocket({
     onAccessError: (code, message) => {
       if (code === 'PAYWALL_REQUIRED') {
-        setIsPremium(false);
-        setPaywallOpen(true);
+        // Une transaction App Store peut être visible sur l'iPhone quelques
+        // secondes avant RevenueCat côté serveur. On resynchronise avant de
+        // rouvrir le paywall pour éviter une boucle après achat.
+        void recheckPremiumBeforePaywall().then((premium) => {
+          if (!premium) {
+            setIsPremium(false);
+            setPaywallOpen(true);
+          }
+        });
         return;
       }
       if (
@@ -103,7 +124,10 @@ export function ConversationScreen() {
     void configureRevenueCat().then((ready) => {
       if (!ready || cancelled) return;
       unsubscribe = subscribePremiumStatus((premium) => {
-        if (!cancelled) setIsPremium(premium);
+        if (!cancelled) {
+          setIsPremium(premium);
+          if (premium) setPaywallOpen(false);
+        }
       });
     });
 
@@ -185,10 +209,12 @@ export function ConversationScreen() {
       from: sourceLanguage,
       to: targetLanguage,
     };
+    let requestId: string | null = null;
+    let uri: string | null = null;
 
     try {
       await recorder.stop();
-      const uri = recorder.uri;
+      uri = recorder.uri;
       if (!uri) return;
 
       if (Date.now() - startedAt.current < 700) {
@@ -196,7 +222,7 @@ export function ConversationScreen() {
         return;
       }
 
-      const requestId = `req-${Date.now()}`;
+      requestId = `req-${Date.now()}`;
 
       addExchange({
         id: requestId,
@@ -209,6 +235,10 @@ export function ConversationScreen() {
 
       const audioFormat = formatFromUri(uri);
       const audioBase64 = await readRecordingAsBase64(uri);
+
+      // Le fichier local n'est plus nécessaire dès qu'il est chargé en mémoire.
+      await deleteRecording(uri).catch(() => {});
+      uri = null;
 
       const socket = getSocket();
       if (!socket.connected) {
@@ -229,6 +259,14 @@ export function ConversationScreen() {
       armTimeout(requestId);
     } catch (error) {
       console.log('[record] arrêt impossible', error);
+      if (requestId) {
+        updateExchange(requestId, {
+          status: 'error',
+          errorMessage: 'Impossible de préparer cet enregistrement. Réessaie.',
+        });
+      }
+    } finally {
+      if (uri) await deleteRecording(uri).catch(() => {});
     }
   }, [
     recorder,
@@ -248,8 +286,11 @@ export function ConversationScreen() {
           await stopRecording();
         } else {
           if (!isPremium && freeTranslationCount >= FREE_TRANSLATION_LIMIT) {
-            setPaywallOpen(true);
-            return;
+            const premium = await recheckPremiumBeforePaywall();
+            if (!premium) {
+              setPaywallOpen(true);
+              return;
+            }
           }
 
           await startRecording(side, from, to);
@@ -266,6 +307,7 @@ export function ConversationScreen() {
       stopRecording,
       isPremium,
       freeTranslationCount,
+      recheckPremiumBeforePaywall,
     ],
   );
 
@@ -452,7 +494,10 @@ export function ConversationScreen() {
       <Paywall
         visible={paywallOpen}
         onClose={() => setPaywallOpen(false)}
-        onPremiumActivated={() => setIsPremium(true)}
+        onPremiumActivated={() => {
+          setIsPremium(true);
+          setPaywallOpen(false);
+        }}
       />
     </SafeAreaView>
   );
