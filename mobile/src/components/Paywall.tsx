@@ -26,6 +26,12 @@ import {
   PRIVACY_URL,
   TERMS_URL,
 } from '../constants/config';
+import { useTranslation } from '../i18n/useTranslation';
+import {
+  fill,
+  getPaywallCopy,
+  PaywallCopy,
+} from '../i18n/paywallTranslations';
 
 type PlanKey = 'annual' | 'monthly' | 'weekly';
 
@@ -60,38 +66,40 @@ function packageMatches(pkg: PurchasesPackage, key: PlanKey): boolean {
   return pkg.identifier === '$rc_weekly' || haystack.includes('week');
 }
 
-function formatCurrency(value: number, currencyCode: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: currencyCode,
-      maximumFractionDigits: 2,
-    }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
-}
-
-function trialLabel(pkg: PurchasesPackage | null): string | null {
+function trialLabel(
+  pkg: PurchasesPackage | null,
+  copy: PaywallCopy,
+): string | null {
   const intro = pkg?.product.introPrice;
   if (!intro || intro.price !== 0) return null;
 
   const count = intro.periodNumberOfUnits;
   const unit = String(intro.periodUnit).toUpperCase();
   const words: Record<string, [string, string]> = {
-    DAY: ['jour', 'jours'],
-    WEEK: ['semaine', 'semaines'],
-    MONTH: ['mois', 'mois'],
-    YEAR: ['an', 'ans'],
+    DAY: copy.day,
+    WEEK: copy.week,
+    MONTH: copy.month,
+    YEAR: copy.year,
   };
-  const [single, plural] = words[unit] || ['jour', 'jours'];
-  return `${count} ${count === 1 ? single : plural} d’essai gratuit`;
+  const [single, plural] = words[unit] || copy.day;
+  return fill(copy.freeTrialTemplate, {
+    count,
+    unit: count === 1 ? single : plural,
+  });
 }
 
-function periodSuffix(key: PlanKey): string {
-  if (key === 'annual') return '/ an';
-  if (key === 'monthly') return '/ mois';
-  return '/ semaine';
+function periodSuffix(key: PlanKey, copy: PaywallCopy): string {
+  if (key === 'annual') return copy.perYear;
+  if (key === 'monthly') return copy.perMonth;
+  return copy.perWeek;
+}
+
+function uniquePackages(packages: PurchasesPackage[]): PurchasesPackage[] {
+  const byProduct = new Map<string, PurchasesPackage>();
+  for (const pkg of packages) {
+    byProduct.set(pkg.product.identifier, pkg);
+  }
+  return [...byProduct.values()];
 }
 
 export function Paywall({
@@ -99,6 +107,8 @@ export function Paywall({
   onClose,
   onPremiumActivated,
 }: Props) {
+  const { locale } = useTranslation();
+  const copy = useMemo(() => getPaywallCopy(locale), [locale]);
   const { colors, name: themeName } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -119,7 +129,30 @@ export function Paywall({
       }
 
       const offerings = await Purchases.getOfferings();
-      const available = offerings.current?.availablePackages ?? [];
+      const currentPackages = offerings.current?.availablePackages ?? [];
+      const everyOfferingPackages = Object.values(offerings.all ?? {}).flatMap(
+        (offering) => offering.availablePackages,
+      );
+
+      // Current est normalement la bonne source. En secours, si RevenueCat a
+      // bien les produits mais qu'aucune Offering n'est marquée Current/Default,
+      // on utilise les packages présents dans les autres Offerings.
+      const available = uniquePackages(
+        currentPackages.length > 0 ? currentPackages : everyOfferingPackages,
+      );
+
+      if (currentPackages.length === 0 && available.length > 0) {
+        console.log(
+          '[RevenueCat] Offering courante vide : utilisation des packages disponibles dans les autres Offerings.',
+        );
+      }
+
+      if (available.length === 0) {
+        console.log(
+          '[RevenueCat] Aucun package App Store disponible. Vérifie les produits iOS, leur entitlement premium et les Offerings RevenueCat.',
+        );
+      }
+
       setPackages(available);
 
       const entries = await Promise.all(
@@ -158,17 +191,19 @@ export function Paywall({
         title,
         package: pkg,
         trialEligible: Boolean(
-          pkg && trialEligibility[pkg.product.identifier] && trialLabel(pkg),
+          pkg &&
+            trialEligibility[pkg.product.identifier] &&
+            trialLabel(pkg, copy),
         ),
       };
     };
 
     return [
-      makePlan('annual', 'Yearly'),
-      makePlan('monthly', 'Monthly'),
-      makePlan('weekly', 'Weekly'),
+      makePlan('annual', copy.yearly),
+      makePlan('monthly', copy.monthly),
+      makePlan('weekly', copy.weekly),
     ];
-  }, [packages, trialEligibility]);
+  }, [packages, trialEligibility, copy]);
 
   const selectedPlan =
     plans.find((plan) => plan.key === selected) ?? plans[0];
@@ -177,14 +212,16 @@ export function Paywall({
 
   const detail = (plan: Plan): string => {
     const product = plan.package?.product;
-    if (!product) return 'Prix App Store indisponible';
+    if (!product) return copy.priceUnavailable;
 
     if (plan.key === 'annual') {
-      const monthly = formatCurrency(product.price / 12, product.currencyCode);
-      return `≈ ${monthly} / mois`;
+      const monthly = product.pricePerMonthString;
+      return monthly
+        ? fill(copy.approxPerMonth, { price: monthly })
+        : `${product.priceString} ${copy.perYear}`;
     }
-    if (plan.key === 'monthly') return `${product.priceString} / mois`;
-    return `${product.priceString} / semaine`;
+    if (plan.key === 'monthly') return `${product.priceString} ${copy.perMonth}`;
+    return `${product.priceString} ${copy.perWeek}`;
   };
 
   const handlePurchase = async () => {
@@ -192,16 +229,16 @@ export function Paywall({
 
     if (!ready) {
       Alert.alert(
-        'Abonnement indisponible',
-        'Les achats ne sont pas disponibles dans cette version de Nevi.',
+        copy.subscriptionUnavailableTitle,
+        copy.purchasesUnavailableBody,
       );
       return;
     }
 
     if (!selectedPlan.package) {
       Alert.alert(
-        'Abonnement indisponible',
-        'Les prix App Store ne sont pas disponibles pour le moment. Réessaie dans quelques instants.',
+        copy.subscriptionUnavailableTitle,
+        copy.pricesUnavailableBody,
       );
       return;
     }
@@ -222,10 +259,7 @@ export function Paywall({
     } catch (error: any) {
       if (!error?.userCancelled) {
         console.log('[RevenueCat] achat impossible', error);
-        Alert.alert(
-          'Achat impossible',
-          'L’achat n’a pas pu être finalisé. Réessaie dans quelques instants.',
-        );
+        Alert.alert(copy.purchaseFailedTitle, copy.purchaseFailedBody);
       }
     } finally {
       setLoading(false);
@@ -236,10 +270,7 @@ export function Paywall({
     const ready = await configureRevenueCat();
 
     if (!ready) {
-      Alert.alert(
-        'Restauration indisponible',
-        'Les achats ne sont pas disponibles dans cette version de Nevi.',
-      );
+      Alert.alert(copy.restoreUnavailableTitle, copy.purchasesUnavailableBody);
       return;
     }
 
@@ -252,34 +283,35 @@ export function Paywall({
       ) {
         await syncPremiumWithBackend();
         onPremiumActivated?.();
-        Alert.alert('Achat restauré', 'Nevi Pro est maintenant actif.');
+        Alert.alert(copy.restoreSuccessTitle, copy.restoreSuccessBody);
         onClose();
       } else {
-        Alert.alert(
-          'Aucun abonnement trouvé',
-          'Aucun abonnement Nevi Pro actif n’a été trouvé sur ce compte Apple.',
-        );
+        Alert.alert(copy.noSubscriptionTitle, copy.noSubscriptionBody);
       }
     } catch (error) {
       console.log('[RevenueCat] restauration impossible', error);
-      Alert.alert(
-        'Restauration impossible',
-        'Impossible de restaurer les achats pour le moment.',
-      );
+      Alert.alert(copy.restoreFailedTitle, copy.restoreFailedBody);
     } finally {
       setLoading(false);
     }
   };
 
   const intro = selectedPlan.trialEligible
-    ? trialLabel(selectedPlan.package)
+    ? trialLabel(selectedPlan.package, copy)
     : null;
 
   const buttonLabel = !selectedPlan.package
-    ? 'Abonnement indisponible'
+    ? copy.subscriptionUnavailableTitle
     : intro
-      ? `Essayer ${intro.replace(' d’essai gratuit', '')} gratuitement`
-      : `Continuer — ${displayPrice(selectedPlan)}`;
+      ? fill(copy.tryFreeTemplate, { trial: intro })
+      : `${copy.continueLabel} — ${displayPrice(selectedPlan)}`;
+
+  const renewalText = selectedPlan.package
+    ? `${intro ? `${intro}. ${copy.then} ` : ''}${displayPrice(selectedPlan)} ${periodSuffix(
+        selectedPlan.key,
+        copy,
+      )}. ${copy.autoRenew}`
+    : copy.conditionsUnavailable;
 
   return (
     <Modal
@@ -306,23 +338,24 @@ export function Paywall({
               hitSlop={18}
               style={styles.closeButton}
               accessibilityRole="button"
-              accessibilityLabel="Fermer"
+              accessibilityLabel={copy.close}
             >
               <Text style={styles.closeText}>×</Text>
             </Pressable>
           </View>
 
           <Text style={styles.eyebrow}>NEVI PRO</Text>
-          <Text style={styles.title}>Chaque langue,{`\n`}en direct.</Text>
-          <Text style={styles.subtitle}>
-            Traduction vocale illimitée*, mode face à face, voix naturelle et
-            bien plus encore.
+          <Text style={styles.title}>
+            {copy.headlineLine1}{`\n`}{copy.headlineLine2}
           </Text>
+          <Text style={styles.subtitle}>{copy.subtitle}</Text>
 
           <View style={styles.plans}>
             {plans.map((plan) => {
               const active = selected === plan.key;
-              const planTrial = plan.trialEligible ? trialLabel(plan.package) : null;
+              const planTrial = plan.trialEligible
+                ? trialLabel(plan.package, copy)
+                : null;
 
               return (
                 <Pressable
@@ -355,9 +388,7 @@ export function Paywall({
           {loadingProducts && packages.length === 0 && (
             <View style={styles.loadingRow}>
               <ActivityIndicator />
-              <Text style={styles.loadingText}>
-                Vérification des prix App Store…
-              </Text>
+              <Text style={styles.loadingText}>{copy.loadingPrices}</Text>
             </View>
           )}
 
@@ -377,17 +408,13 @@ export function Paywall({
             )}
           </Pressable>
 
-          <Text style={styles.renewal}>
-            {selectedPlan.package
-              ? `${intro ? `${intro}. Puis ` : ''}${displayPrice(selectedPlan)} ${periodSuffix(
-                  selectedPlan.key,
-                )}. Abonnement automatique. Annulable à tout moment.`
-              : 'Les prix et conditions d’abonnement seront affichés dès qu’ils seront disponibles depuis l’App Store.'}
-          </Text>
+          <Text style={styles.renewal}>{renewalText}</Text>
 
           <Text style={styles.renewal}>
-            *Usage personnel raisonnable : jusqu’à {PREMIUM_DAILY_LIMIT} traductions
-            sur 24 h et {PREMIUM_30_DAY_LIMIT} sur 30 jours.
+            {fill(copy.fairUseTemplate, {
+              daily: PREMIUM_DAILY_LIMIT,
+              monthly: PREMIUM_30_DAY_LIMIT,
+            })}
           </Text>
 
           <Pressable
@@ -395,31 +422,31 @@ export function Paywall({
             disabled={loading}
             hitSlop={8}
           >
-            <Text style={styles.restore}>Restaurer un achat</Text>
+            <Text style={styles.restore}>{copy.restorePurchase}</Text>
           </Pressable>
 
           <View style={styles.features}>
             <View style={styles.featureColumn}>
-              <Text style={styles.feature}>✓  Traductions illimitées*</Text>
-              <Text style={styles.feature}>✓  Traduisez en voyage</Text>
+              <Text style={styles.feature}>✓  {copy.unlimitedTranslations}</Text>
+              <Text style={styles.feature}>✓  {copy.travel}</Text>
             </View>
             <View style={styles.featureColumn}>
-              <Text style={styles.feature}>✓  Mode face à face</Text>
-              <Text style={styles.feature}>✓  Voix naturelle</Text>
+              <Text style={styles.feature}>✓  {copy.faceToFace}</Text>
+              <Text style={styles.feature}>✓  {copy.naturalVoice}</Text>
             </View>
           </View>
 
           <View style={styles.legalRow}>
             <Pressable onPress={() => void Linking.openURL(TERMS_URL)}>
-              <Text style={styles.legal}>Conditions</Text>
+              <Text style={styles.legal}>{copy.terms}</Text>
             </Pressable>
             <Text style={styles.legalDot}>·</Text>
             <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}>
-              <Text style={styles.legal}>Confidentialité</Text>
+              <Text style={styles.legal}>{copy.privacy}</Text>
             </Pressable>
             <Text style={styles.legalDot}>·</Text>
             <Pressable onPress={() => void handleRestore()}>
-              <Text style={styles.legal}>Restaurer</Text>
+              <Text style={styles.legal}>{copy.restore}</Text>
             </Pressable>
           </View>
         </ScrollView>
