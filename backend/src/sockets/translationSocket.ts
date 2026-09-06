@@ -8,13 +8,19 @@ import { consumeRateLimit } from '../security/rateLimit';
 export function registerTranslationSocket(io: Server): void {
   io.on('connection', (socket: Socket) => {
     const installationId = socketInstallationId(socket);
+    const ip = socket.handshake.address || 'unknown';
     logger.info(`Client anonyme connecté : ${installationId.slice(0, 12)}…`);
 
     socket.on(SOCKET_EVENTS.TRANSLATE, async (payload: TranslationRequest) => {
       const requestId = payload?.requestId || 'inconnu';
-      const limit = consumeRateLimit(`translate:${installationId}`, 20, 60_000);
+      const installationLimit = consumeRateLimit(
+        `translate-install:${installationId}`,
+        20,
+        60_000
+      );
+      const ipLimit = consumeRateLimit(`translate-ip:${ip}`, 60, 60_000);
 
-      if (!limit.allowed) {
+      if (!installationLimit.allowed || !ipLimit.allowed) {
         socket.emit(SOCKET_EVENTS.PIPELINE_ERROR, {
           requestId,
           stage: 'unknown',
