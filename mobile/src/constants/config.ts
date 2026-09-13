@@ -14,3 +14,9 @@ export const MAX_RECORDING_MS = 60_000;
 /** Politique d'usage raisonnable Nevi Pro — identique au backend. */
 export const PREMIUM_DAILY_LIMIT = 100;
 export const PREMIUM_30_DAY_LIMIT = 1000;
+
+/** Jeton public de projet PostHog. Il est côté client, donc pas secret. */
+export const POSTHOG_API_KEY = 'phc_AxUPsYwNbFs5YaRVRoLZAQNseQhYtN9gQGdV2GVzUkGg';
+
+/** Hôte PostHog du projet (région EU). */
+export const POSTHOG_HOST = 'https://eu.i.posthog.com';

@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PostHogProvider } from 'posthog-react-native';
 import { ConversationScreen } from './src/screens/ConversationScreen';
 import { SplashScreen } from './src/components/SplashScreen';
 import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
 import { configureRevenueCat } from './src/services/revenueCat';
+import { posthog } from './src/services/analytics';
 
 function Root() {
   const { name } = useTheme();
@@ -28,10 +30,12 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <Root />
-        {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
-      </ThemeProvider>
+      <PostHogProvider client={posthog} autocapture={{ captureScreens: false }}>
+        <ThemeProvider>
+          <Root />
+          {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+        </ThemeProvider>
+      </PostHogProvider>
     </SafeAreaProvider>
   );
 }
