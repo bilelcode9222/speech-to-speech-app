@@ -1,4 +1,4 @@
-import { captureServerAnalytics } from './serverAnalytics';
+import { recordAnalyticsEvent } from './analyticsStore';
 
 interface RevenueCatEvent {
   id?: string;
@@ -23,8 +23,8 @@ interface RevenueCatPayload {
 }
 
 /**
- * Forward only commercial metadata to PostHog. Audio, transcript and RevenueCat
- * subscriber attributes are deliberately excluded.
+ * Stocke uniquement les métadonnées commerciales dans Nevi Pulse. Audio,
+ * transcription et attributs abonnés RevenueCat sont volontairement exclus.
  */
 export async function recordRevenueCatAnalytics(
   payload: RevenueCatPayload,
@@ -37,7 +37,7 @@ export async function recordRevenueCatAnalytics(
     throw new Error('Webhook RevenueCat incomplet.');
   }
 
-  await captureServerAnalytics(`revenuecat_${type}`, distinctId, {
+  await recordAnalyticsEvent(`revenuecat_${type}`, distinctId, {
     $insert_id: `revenuecat:${eventId}`,
     revenuecat_event_id: eventId,
     revenue_usd: event.price ?? null,

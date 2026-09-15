@@ -37,6 +37,7 @@ import {
 import { analyticsDashboardPage } from './admin/analyticsDashboardPage';
 import { recordRevenueCatAnalytics } from './services/revenueCatAnalytics';
 import { recordTranslationCost } from './services/unitEconomics';
+import { AnalyticsProperties, recordAnalyticsEvent } from './services/analyticsStore';
 
 const app = express();
 
@@ -82,8 +83,7 @@ app.get('/api/admin/analytics', async (req, res) => {
 
   if (!analyticsDashboardConfigured()) {
     res.status(503).json({
-      error:
-        'Le tableau de bord doit être configuré avec POSTHOG_PROJECT_ID et POSTHOG_PERSONAL_API_KEY.',
+      error: 'Nevi Pulse requiert DATABASE_URL pour son stockage interne.',
     });
     return;
   }
@@ -95,10 +95,57 @@ app.get('/api/admin/analytics', async (req, res) => {
   try {
     res.json(await loadAnalyticsSnapshot(period));
   } catch (error) {
-    logger.error('Tableau de bord PostHog indisponible', error);
+    logger.error('Tableau de bord Nevi Pulse indisponible', error);
     res.status(502).json({
-      error: 'PostHog ne répond pas pour le moment. Réessaie dans quelques instants.',
+      error: 'Nevi Pulse ne répond pas pour le moment. Réessaie dans quelques instants.',
     });
+  }
+});
+
+const CLIENT_ANALYTICS_EVENTS = new Set([
+  'app_opened', 'onboarding_viewed', 'onboarding_step_completed', 'onboarding_completed',
+  'paywall_opened', 'subscription_plan_selected', 'subscription_purchase_started',
+  'subscription_purchased', 'subscription_restored', 'subscription_purchase_failed',
+  'subscription_backend_sync_delayed', 'translation_recording_started', 'translation_completed',
+  'translation_failed', 'face_to_face_mode_changed', 'client_error',
+]);
+
+function safeAnalyticsProperties(value: unknown): AnalyticsProperties | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 20) return null;
+  const safe: AnalyticsProperties = {};
+  for (const [key, item] of entries) {
+    if (!/^[a-z_]{1,64}$/.test(key)) return null;
+    if (typeof item === 'string') {
+      if (item.length > 80) return null;
+      safe[key] = item;
+    } else if (typeof item === 'number' && Number.isFinite(item)) {
+      safe[key] = item;
+    } else if (typeof item === 'boolean' || item === null) {
+      safe[key] = item;
+    } else {
+      return null;
+    }
+  }
+  return safe;
+}
+
+app.post('/api/analytics/events', requireAnonymousHttpSession, async (req, res) => {
+  const event = req.body?.event;
+  const properties = safeAnalyticsProperties(req.body?.properties);
+  if (typeof event !== 'string' || !CLIENT_ANALYTICS_EVENTS.has(event) || !properties) {
+    res.status(400).json({ error: 'Événement analytics invalide.' });
+    return;
+  }
+
+  try {
+    const session = res.locals.anonymousSession as AnonymousSession;
+    await recordAnalyticsEvent(event, session.installationId, properties);
+    res.status(204).end();
+  } catch (error) {
+    logger.warn('Événement Nevi Pulse client non enregistré', error);
+    res.status(503).json({ error: 'Nevi Pulse indisponible.' });
   }
 });
 

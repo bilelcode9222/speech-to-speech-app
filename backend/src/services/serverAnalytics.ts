@@ -1,7 +1,5 @@
-import axios from 'axios';
-
-import { config } from '../config/env';
 import { logger } from '../utils/logger';
+import { recordAnalyticsEvent } from './analyticsStore';
 
 /**
  * Événements purement serveur : l'identifiant reste pseudonyme et les
@@ -13,23 +11,10 @@ export async function captureServerAnalytics(
   properties: Record<string, string | number | boolean | null | undefined>,
   timestamp?: string,
 ): Promise<void> {
-  const token = config.analyticsDashboard.posthogProjectToken;
-  if (!token) return;
-
-  const host = config.analyticsDashboard.posthogHost.replace(/\/$/, '');
   try {
-    await axios.post(
-      `${host}/capture/`,
-      {
-        api_key: token,
-        event,
-        properties: { distinct_id: installationId, ...properties },
-        timestamp,
-      },
-      { timeout: 10_000 },
-    );
+    await recordAnalyticsEvent(event, installationId, properties, timestamp);
   } catch (error) {
     // Le suivi ne doit jamais ralentir ni empêcher une traduction réussie.
-    logger.warn(`Événement analytics ${event} non envoyé : ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn(`Événement Nevi Pulse ${event} non enregistré : ${error instanceof Error ? error.message : String(error)}`);
   }
 }
