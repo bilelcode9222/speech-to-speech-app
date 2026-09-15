@@ -53,7 +53,12 @@ export async function translateText(
       throw new StageError('translation', 'Le modèle a renvoyé une traduction vide.');
     }
 
-    return { translatedText, durationMs };
+    return {
+      translatedText,
+      durationMs,
+      inputTokens: Number(completion.usage?.prompt_tokens) || undefined,
+      outputTokens: Number(completion.usage?.completion_tokens) || undefined,
+    };
   } catch (error) {
     if (error instanceof StageError) throw error;
     logger.error('Échec de la traduction', error);

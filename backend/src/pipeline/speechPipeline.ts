@@ -38,6 +38,8 @@ export async function runSpeechPipeline(
   let translatedText: string;
   let sttMs = 0;
   let translationMs = 0;
+  let translationInputTokens: number | undefined;
+  let translationOutputTokens: number | undefined;
 
   if (config.provider === 'openai') {
     const stt = await transcribeOpenAI(
@@ -56,6 +58,8 @@ export async function runSpeechPipeline(
     );
     translatedText = translation.translatedText;
     translationMs = translation.durationMs;
+    translationInputTokens = translation.inputTokens;
+    translationOutputTokens = translation.outputTokens;
     hooks.onTranslation?.(translatedText);
   } else if (config.provider === 'gemini') {
     const result = await translateAudio(
@@ -87,6 +91,8 @@ export async function runSpeechPipeline(
     );
     translatedText = translation.translatedText;
     translationMs = translation.durationMs;
+    translationInputTokens = translation.inputTokens;
+    translationOutputTokens = translation.outputTokens;
     hooks.onTranslation?.(translatedText);
   }
 
@@ -102,6 +108,7 @@ export async function runSpeechPipeline(
     audioBase64: speech.audioBase64,
     audioFormat: speech.format,
     timings: { stt: sttMs, translation: translationMs, tts: speech.durationMs, total },
+    usage: { translationInputTokens, translationOutputTokens },
   };
 }
 

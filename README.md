@@ -62,6 +62,8 @@ POSTHOG_PERSONAL_API_KEY=...
 POSTHOG_PROJECT_TOKEN=...
 ANALYTICS_DASHBOARD_TOKEN=...
 REVENUECAT_WEBHOOK_AUTHORIZATION=...
+UNIT_ECONOMICS_CAC_USD=1.50
+UNIT_ECONOMICS_STORE_NET_REVENUE_SHARE=0.70
 ```
 
 `ANONYMOUS_SESSION_SECRET` peut être générée avec :
@@ -87,6 +89,8 @@ Le backend fournit un tableau de bord léger à l’adresse `/admin/analytics`. 
 Ajoute dans Render les variables PostHog/Nevi Pulse ci-dessus, avec une clé API personnelle PostHog limitée à la lecture du projet. Ouvre ensuite `https://ton-backend/admin/analytics` et saisis `ANALYTICS_DASHBOARD_TOKEN` : ce code reste dans le navigateur et est transmis uniquement à l’API du backend dans un en-tête HTTP.
 
 Configure également dans RevenueCat un webhook vers `https://ton-backend/webhooks/revenuecat`, avec l’en-tête `Authorization` égal à `REVENUECAT_WEBHOOK_AUTHORIZATION`. Nevi Pulse recevra ainsi les essais réellement confirmés, renouvellements, annulations, expirations et prix en dollars, sans données de conversation.
+
+Nevi Pulse calcule aussi la rentabilité globale et par installation : le revenu affiché est le prix RevenueCat multiplié par `UNIT_ECONOMICS_STORE_NET_REVENUE_SHARE`, afin de ne pas confondre le prix payé et le revenu estimé après commission Apple. Le coût IA est construit à partir de la durée audio, des tokens de traduction et des caractères TTS ; configure les tarifs `UNIT_ECONOMICS_*` lors d’un changement de fournisseur ou de modèle. `UNIT_ECONOMICS_CAC_USD` vaut `1.50` par défaut, conformément au coût d’installation actuel, et peut être adapté à chaque campagne. Une ligne marquée d’un `*` indique qu’un tarif fournisseur ou une mesure de coût manque.
 
 Le funnel cible est : `onboarding terminé → paywall vu → paiement lancé → essai démarré`. Nevi Pulse indique immédiatement l’étape à optimiser, avec un objectif de 20 % d’essais par paywall vu.
 

@@ -10,6 +10,8 @@ export interface TranslationRequest {
   sourceLanguage: LanguageCode;
   targetLanguage: LanguageCode;
   requestId: string;
+  /** Durée mesurée sur l'app, utilisée uniquement pour estimer le coût STT. */
+  recordingDurationMs?: number;
 }
 
 export interface TranscriptionResult {
@@ -20,6 +22,8 @@ export interface TranscriptionResult {
 export interface TranslationResult {
   translatedText: string;
   durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface SpeechResult {
@@ -39,6 +43,10 @@ export interface PipelineResult {
     translation: number;
     tts: number;
     total: number;
+  };
+  usage: {
+    translationInputTokens?: number;
+    translationOutputTokens?: number;
   };
 }
 

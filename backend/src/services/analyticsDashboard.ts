@@ -37,6 +37,26 @@ export interface AnalyticsSnapshot {
     event: string;
     detail: string;
   }>;
+  economics: {
+    grossRevenueUsd: number;
+    estimatedNetRevenueUsd: number;
+    technicalCostUsd: number;
+    acquisitionCostUsd: number;
+    estimatedMarginUsd: number;
+    acquisitionCostPerUserUsd: number;
+    storeNetRevenueShare: number;
+    incompleteCostEvents: number;
+  };
+  customers: Array<{
+    installationId: string;
+    grossRevenueUsd: number;
+    estimatedNetRevenueUsd: number;
+    technicalCostUsd: number;
+    acquisitionCostUsd: number;
+    estimatedMarginUsd: number;
+    translations: number;
+    incompleteCostEvents: number;
+  }>;
 }
 
 interface HogQLResponse {
@@ -87,7 +107,27 @@ export async function loadAnalyticsSnapshot(
   period: AnalyticsPeriod,
 ): Promise<AnalyticsSnapshot> {
   const since = interval(period);
-  const [summaryRows, dailyRows, languageRows, recentRows, failureRows] = await Promise.all([
+  const [
+    summaryRows,
+    dailyRows,
+    languageRows,
+    recentRows,
+    failureRows,
+    economicsSummaryRows,
+    economicsRows,
+  ] = await Promise.all([
+    hogql(`
+      SELECT
+        sumIf(
+          toFloat(properties.revenue_usd),
+          event IN ('revenuecat_initial_purchase', 'revenuecat_renewal', 'revenuecat_non_renewing_purchase')
+            AND properties.environment = 'PRODUCTION'
+        ),
+        sumIf(toFloat(properties.estimated_cost_usd), event = 'translation_cost_recorded'),
+        countIf(event = 'translation_cost_recorded' AND properties.cost_estimate_complete != true)
+      FROM events
+      WHERE timestamp >= now() - ${since}
+    `),
     hogql(`
       SELECT
         count(DISTINCT distinct_id),
@@ -165,9 +205,48 @@ export async function loadAnalyticsSnapshot(
       ORDER BY 2 DESC
       LIMIT 8
     `),
+    hogql(`
+      SELECT
+        distinct_id,
+        sumIf(
+          toFloat(properties.revenue_usd),
+          event IN ('revenuecat_initial_purchase', 'revenuecat_renewal', 'revenuecat_non_renewing_purchase')
+            AND properties.environment = 'PRODUCTION'
+        ),
+        sumIf(toFloat(properties.estimated_cost_usd), event = 'translation_cost_recorded'),
+        countIf(event = 'translation_cost_recorded'),
+        countIf(event = 'translation_cost_recorded' AND properties.cost_estimate_complete != true)
+      FROM events
+      WHERE timestamp >= now() - ${since}
+      GROUP BY 1
+      ORDER BY 2 DESC, 3 DESC
+      LIMIT 200
+    `),
   ]);
 
   const summary = summaryRows[0] ?? [];
+  const share = Math.min(1, config.unitEconomics.storeNetRevenueShare);
+  const customers = economicsRows.map((row) => {
+    const grossRevenueUsd = number(row[1]);
+    const estimatedNetRevenueUsd = grossRevenueUsd * share;
+    const technicalCostUsd = number(row[2]);
+    const acquisitionCostUsd = config.unitEconomics.defaultAcquisitionCostUsd;
+    return {
+      installationId: string(row[0], 'unknown'),
+      grossRevenueUsd,
+      estimatedNetRevenueUsd,
+      technicalCostUsd,
+      acquisitionCostUsd,
+      estimatedMarginUsd: estimatedNetRevenueUsd - technicalCostUsd - acquisitionCostUsd,
+      translations: number(row[3]),
+      incompleteCostEvents: number(row[4]),
+    };
+  });
+  const economicsSummary = economicsSummaryRows[0] ?? [];
+  const grossRevenueUsd = number(economicsSummary[0]);
+  const estimatedNetRevenueUsd = grossRevenueUsd * share;
+  const technicalCostUsd = number(economicsSummary[1]);
+  const acquisitionCostUsd = number(summary[0]) * config.unitEconomics.defaultAcquisitionCostUsd;
   return {
     period,
     generatedAt: new Date().toISOString(),
@@ -208,6 +287,17 @@ export async function loadAnalyticsSnapshot(
       event: string(row[2]),
       detail: string(row[3], ''),
     })),
+    economics: {
+      grossRevenueUsd,
+      estimatedNetRevenueUsd,
+      technicalCostUsd,
+      acquisitionCostUsd,
+      estimatedMarginUsd: estimatedNetRevenueUsd - technicalCostUsd - acquisitionCostUsd,
+      acquisitionCostPerUserUsd: config.unitEconomics.defaultAcquisitionCostUsd,
+      storeNetRevenueShare: share,
+      incompleteCostEvents: number(economicsSummary[2]),
+    },
+    customers: customers.sort((a, b) => a.estimatedMarginUsd - b.estimatedMarginUsd),
   };
 }
 

@@ -36,6 +36,7 @@ import {
 } from './services/analyticsDashboard';
 import { analyticsDashboardPage } from './admin/analyticsDashboardPage';
 import { recordRevenueCatAnalytics } from './services/revenueCatAnalytics';
+import { recordTranslationCost } from './services/unitEconomics';
 
 const app = express();
 
@@ -192,6 +193,13 @@ app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) =
     const result = await runSpeechPipeline(req.body as TranslationRequest);
     await recordSuccessfulTranslation(session.installationId, access.premium);
     res.json(result);
+    void recordTranslationCost({
+      installationId: session.installationId,
+      recordingDurationMs: req.body?.recordingDurationMs,
+      translatedText: result.translatedText,
+      translationInputTokens: result.usage.translationInputTokens,
+      translationOutputTokens: result.usage.translationOutputTokens,
+    });
   } catch (error) {
     next(error instanceof StageError ? error : new Error(String(error)));
   } finally {

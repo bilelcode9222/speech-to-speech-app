@@ -127,7 +127,12 @@ export async function translateOpenAI(
       throw new StageError('translation', 'Le modèle a renvoyé une traduction vide.');
     }
 
-    return { translatedText, durationMs };
+    return {
+      translatedText,
+      durationMs,
+      inputTokens: Number(response.data?.usage?.prompt_tokens) || undefined,
+      outputTokens: Number(response.data?.usage?.completion_tokens) || undefined,
+    };
   } catch (error) {
     if (error instanceof StageError) throw error;
     logger.error('Échec OpenAI (traduction)', error);

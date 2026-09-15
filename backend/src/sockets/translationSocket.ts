@@ -11,6 +11,7 @@ import {
   recordSuccessfulTranslation,
 } from '../security/accessControl';
 import { socketClientIp } from '../utils/clientIp';
+import { recordTranslationCost } from '../services/unitEconomics';
 
 function publicPipelineMessage(error: unknown): string {
   if (!(error instanceof StageError)) {
@@ -88,6 +89,13 @@ export function registerTranslationSocket(io: Server): void {
 
         await recordSuccessfulTranslation(installationId, access.premium);
         socket.emit(SOCKET_EVENTS.AUDIO_READY, result);
+        void recordTranslationCost({
+          installationId,
+          recordingDurationMs: payload.recordingDurationMs,
+          translatedText: result.translatedText,
+          translationInputTokens: result.usage.translationInputTokens,
+          translationOutputTokens: result.usage.translationOutputTokens,
+        });
       } catch (error) {
         const stage = error instanceof StageError ? error.stage : 'unknown';
         logger.error(`Pipeline ${requestId} en échec (${stage})`, error);

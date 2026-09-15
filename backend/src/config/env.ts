@@ -28,6 +28,11 @@ function requireEnv(key: string): string {
   return value;
 }
 
+function nonNegativeNumberEnv(key: string, fallback: number): number {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 const provider = (process.env.AI_PROVIDER || 'openai') as 'openai' | 'gemini' | 'groq';
 
 const ttsProvider = (process.env.TTS_PROVIDER || 'openai') as
@@ -75,6 +80,46 @@ export const config = {
     dashboardToken: optionalEnv('ANALYTICS_DASHBOARD_TOKEN'),
     revenueCatWebhookAuthorization: optionalEnv(
       'REVENUECAT_WEBHOOK_AUTHORIZATION',
+    ),
+  },
+
+  // Les tarifs restent configurables : le tableau de bord ne dépend jamais
+  // d'un prix codé en dur si un fournisseur ou son tarif évolue.
+  unitEconomics: {
+    defaultAcquisitionCostUsd: nonNegativeNumberEnv('UNIT_ECONOMICS_CAC_USD', 1.5),
+    // RevenueCat remonte le prix payé. Ce coefficient donne une estimation
+    // prudente de la part réellement reversée après commission de l'App Store.
+    storeNetRevenueShare: nonNegativeNumberEnv('UNIT_ECONOMICS_STORE_NET_REVENUE_SHARE', 0.7),
+    openaiWhisperPerMinuteUsd: nonNegativeNumberEnv(
+      'UNIT_ECONOMICS_OPENAI_WHISPER_PER_MINUTE_USD',
+      0.006,
+    ),
+    openaiLlmInputPerMillionTokensUsd: nonNegativeNumberEnv(
+      'UNIT_ECONOMICS_OPENAI_LLM_INPUT_PER_MILLION_TOKENS_USD',
+      0.15,
+    ),
+    openaiLlmOutputPerMillionTokensUsd: nonNegativeNumberEnv(
+      'UNIT_ECONOMICS_OPENAI_LLM_OUTPUT_PER_MILLION_TOKENS_USD',
+      0.6,
+    ),
+    openaiTtsPerMillionCharactersUsd: nonNegativeNumberEnv(
+      'UNIT_ECONOMICS_OPENAI_TTS_PER_MILLION_CHARACTERS_USD',
+      15,
+    ),
+    // Configure ces tarifs si Gemini, Groq ou ElevenLabs deviennent actifs.
+    // À zéro, la ligne est explicitement marquée comme incomplète dans Pulse.
+    groqSttPerMinuteUsd: nonNegativeNumberEnv('UNIT_ECONOMICS_GROQ_STT_PER_MINUTE_USD', 0),
+    groqLlmInputPerMillionTokensUsd: nonNegativeNumberEnv(
+      'UNIT_ECONOMICS_GROQ_LLM_INPUT_PER_MILLION_TOKENS_USD',
+      0,
+    ),
+    groqLlmOutputPerMillionTokensUsd: nonNegativeNumberEnv(
+      'UNIT_ECONOMICS_GROQ_LLM_OUTPUT_PER_MILLION_TOKENS_USD',
+      0,
+    ),
+    elevenLabsTtsPerMillionCharactersUsd: nonNegativeNumberEnv(
+      'UNIT_ECONOMICS_ELEVENLABS_TTS_PER_MILLION_CHARACTERS_USD',
+      0,
     ),
   },
 
