@@ -33,11 +33,11 @@ Au premier lancement, l'app génère automatiquement un identifiant d'installati
 
 Les clés OpenAI, Groq, Gemini, ElevenLabs et RevenueCat serveur restent exclusivement dans les variables d'environnement backend. Elles ne sont jamais intégrées dans l'application mobile.
 
-RevenueCat est configuré côté mobile pour les achats Apple et le backend vérifie également l'entitlement `premium` via l'API serveur RevenueCat avant d'autoriser les usages Pro.
+RevenueCat est configuré côté mobile pour les achats Apple et le backend vérifie également l'entitlement `nevi_pro` via l'API serveur RevenueCat avant d'autoriser les usages Pro.
 
 ## Quotas et politique d'usage
 
-- Gratuit : 3 traductions réussies avant paywall.
+- Nouvel utilisateur : accès à Nevi Pro via l’essai gratuit proposé par l’App Store.
 - Nevi Pro : traductions illimitées* dans le cadre d'un usage personnel raisonnable.
 - Fair Use : maximum 100 traductions sur toute période de 24 heures et 1 000 traductions sur toute période de 30 jours.
 - Une seule traduction IA peut être active simultanément par installation.
@@ -55,7 +55,13 @@ Les pages publiques sont exposées par le backend :
 ANONYMOUS_SESSION_SECRET=...
 DATABASE_URL=...
 REVENUECAT_SERVER_API_KEY=...
-REVENUECAT_ENTITLEMENT_ID=premium
+REVENUECAT_ENTITLEMENT_ID=nevi_pro
+POSTHOG_API_HOST=https://eu.posthog.com
+POSTHOG_PROJECT_ID=...
+POSTHOG_PERSONAL_API_KEY=...
+POSTHOG_PROJECT_TOKEN=...
+ANALYTICS_DASHBOARD_TOKEN=...
+REVENUECAT_WEBHOOK_AUTHORIZATION=...
 ```
 
 `ANONYMOUS_SESSION_SECRET` peut être générée avec :
@@ -74,9 +80,19 @@ Le mobile utilise uniquement la clé SDK publique iOS RevenueCat :
 EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=...
 ```
 
+## Nevi Pulse — tableau de bord produit
+
+Le backend fournit un tableau de bord léger à l’adresse `/admin/analytics`. Il rassemble les données PostHog utiles à Nevi : activité, complétion de l’onboarding, exposition au paywall, intentions d’achat, essais démarrés, achats, traductions réussies et erreurs. Il ne collecte ni audio ni contenu de conversation.
+
+Ajoute dans Render les variables PostHog/Nevi Pulse ci-dessus, avec une clé API personnelle PostHog limitée à la lecture du projet. Ouvre ensuite `https://ton-backend/admin/analytics` et saisis `ANALYTICS_DASHBOARD_TOKEN` : ce code reste dans le navigateur et est transmis uniquement à l’API du backend dans un en-tête HTTP.
+
+Configure également dans RevenueCat un webhook vers `https://ton-backend/webhooks/revenuecat`, avec l’en-tête `Authorization` égal à `REVENUECAT_WEBHOOK_AUTHORIZATION`. Nevi Pulse recevra ainsi les essais réellement confirmés, renouvellements, annulations, expirations et prix en dollars, sans données de conversation.
+
+Le funnel cible est : `onboarding terminé → paywall vu → paiement lancé → essai démarré`. Nevi Pulse indique immédiatement l’étape à optimiser, avec un objectif de 20 % d’essais par paywall vu.
+
 ## Checklist avant App Store
 
-- RevenueCat : app iOS, Offering courante, produits Weekly / Monthly / Yearly et entitlement `premium` vérifiés.
+- RevenueCat : app iOS, Offering courante, produits Weekly / Monthly / Yearly et entitlement `nevi_pro` vérifiés.
 - Les essais gratuits doivent être configurés dans App Store Connect et ne sont affichés que lorsque RevenueCat confirme l'éligibilité.
 - Render : backend toujours actif, `/health` configuré comme health check et Postgres persistant.
 - App Store Connect : Privacy Policy URL = `https://speech-to-speech-app.onrender.com/privacy`.

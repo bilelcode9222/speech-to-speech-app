@@ -1,5 +1,6 @@
 import http from 'http';
 import os from 'os';
+import crypto from 'crypto';
 import cors from 'cors';
 import express from 'express';
 import { Server } from 'socket.io';
@@ -28,6 +29,13 @@ import {
 } from './security/accessControl';
 import { invalidateRevenueCatCache } from './services/revenueCatService';
 import { privacyPage, supportPage, termsPage } from './legal/pages';
+import {
+  analyticsDashboardConfigured,
+  AnalyticsPeriod,
+  loadAnalyticsSnapshot,
+} from './services/analyticsDashboard';
+import { analyticsDashboardPage } from './admin/analyticsDashboardPage';
+import { recordRevenueCatAnalytics } from './services/revenueCatAnalytics';
 
 const app = express();
 
@@ -59,6 +67,58 @@ app.get('/privacy', (_req, res) => {
 
 app.get('/terms', (_req, res) => {
   res.type('html').send(termsPage());
+});
+
+app.get('/admin/analytics', (_req, res) => {
+  res.type('html').send(analyticsDashboardPage());
+});
+
+app.get('/api/admin/analytics', async (req, res) => {
+  if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) {
+    res.status(401).json({ error: 'Accès au tableau de bord refusé.' });
+    return;
+  }
+
+  if (!analyticsDashboardConfigured()) {
+    res.status(503).json({
+      error:
+        'Le tableau de bord doit être configuré avec POSTHOG_PROJECT_ID et POSTHOG_PERSONAL_API_KEY.',
+    });
+    return;
+  }
+
+  const requestedDays = Number(req.query.days);
+  const period: AnalyticsPeriod =
+    requestedDays === 7 || requestedDays === 14 ? requestedDays : 30;
+
+  try {
+    res.json(await loadAnalyticsSnapshot(period));
+  } catch (error) {
+    logger.error('Tableau de bord PostHog indisponible', error);
+    res.status(502).json({
+      error: 'PostHog ne répond pas pour le moment. Réessaie dans quelques instants.',
+    });
+  }
+});
+
+app.post('/webhooks/revenuecat', async (req, res) => {
+  if (
+    !secretMatches(
+      config.analyticsDashboard.revenueCatWebhookAuthorization,
+      req.header('authorization'),
+    )
+  ) {
+    res.status(401).json({ error: 'Webhook RevenueCat refusé.' });
+    return;
+  }
+
+  try {
+    await recordRevenueCatAnalytics(req.body);
+    res.status(204).end();
+  } catch (error) {
+    logger.error('Webhook RevenueCat non enregistré', error);
+    res.status(502).json({ error: 'Événement RevenueCat non enregistré.' });
+  }
 });
 
 app.post('/api/session', (req, res) => {
@@ -167,6 +227,24 @@ function localAddresses(): string[] {
     }
   }
   return results;
+}
+
+function analyticsDashboardAccessAllowed(candidate: string | undefined): boolean {
+  return secretMatches(config.analyticsDashboard.dashboardToken, candidate);
+}
+
+function secretMatches(
+  expected: string | undefined,
+  candidate: string | undefined,
+): boolean {
+  if (!expected || !candidate) return false;
+
+  const expectedBuffer = Buffer.from(expected);
+  const candidateBuffer = Buffer.from(candidate);
+  return (
+    expectedBuffer.length === candidateBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, candidateBuffer)
+  );
 }
 
 process.on('unhandledRejection', (reason) => {

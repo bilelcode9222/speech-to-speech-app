@@ -62,7 +62,20 @@ export const config = {
       'REVENUECAT_SECRET_API_KEY',
       'REVENUECAT_API_KEY',
     ]),
-    entitlementId: process.env.REVENUECAT_ENTITLEMENT_ID || 'premium',
+    entitlementId: process.env.REVENUECAT_ENTITLEMENT_ID?.trim() || 'nevi_pro',
+  },
+
+  analyticsDashboard: {
+    // La clé de lecture PostHog reste côté serveur : elle ne doit jamais être
+    // présente dans l'app mobile ni dans l'URL publique du tableau de bord.
+    posthogHost: optionalEnv('POSTHOG_API_HOST') || 'https://eu.posthog.com',
+    posthogProjectId: optionalEnv('POSTHOG_PROJECT_ID'),
+    posthogPersonalApiKey: optionalEnv('POSTHOG_PERSONAL_API_KEY'),
+    posthogProjectToken: optionalEnv('POSTHOG_PROJECT_TOKEN'),
+    dashboardToken: optionalEnv('ANALYTICS_DASHBOARD_TOKEN'),
+    revenueCatWebhookAuthorization: optionalEnv(
+      'REVENUECAT_WEBHOOK_AUTHORIZATION',
+    ),
   },
 
   openai: {
