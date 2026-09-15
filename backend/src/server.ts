@@ -104,7 +104,7 @@ app.get('/api/admin/analytics', async (req, res) => {
 
 const CLIENT_ANALYTICS_EVENTS = new Set([
   'app_opened', 'onboarding_viewed', 'onboarding_step_completed', 'onboarding_completed',
-  'paywall_opened', 'subscription_plan_selected', 'subscription_purchase_started',
+  'paywall_step_viewed', 'trial_reminder_permission', 'paywall_opened', 'subscription_plan_selected', 'subscription_purchase_started',
   'subscription_purchased', 'subscription_restored', 'subscription_purchase_failed',
   'subscription_backend_sync_delayed', 'translation_recording_started', 'translation_completed',
   'translation_failed', 'face_to_face_mode_changed', 'client_error',

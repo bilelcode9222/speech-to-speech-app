@@ -79,11 +79,11 @@ export async function loadAnalyticsSnapshot(period: AnalyticsPeriod): Promise<An
       GROUP BY 1 ORDER BY count DESC LIMIT 8`, [since]),
     queryAnalytics<Row>(`
       SELECT occurred_at AS timestamp, installation_id, event_name AS event,
-        COALESCE(properties->>'plan', properties->>'product_id', properties->>'failure_stage', properties->>'error_code', '') AS detail
+        COALESCE(properties->>'plan', properties->>'product_id', properties->>'failure_stage', properties->>'error_code', properties->>'step', properties->>'granted', '') AS detail
       FROM nevi_analytics_events
       WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day') AND event_name IN (
         'app_opened','onboarding_viewed','onboarding_step_completed','onboarding_completed',
-        'paywall_opened','subscription_plan_selected','subscription_purchase_started',
+        'paywall_step_viewed','trial_reminder_permission','paywall_opened','subscription_plan_selected','subscription_purchase_started',
         'subscription_purchased','subscription_purchase_failed','translation_recording_started',
         'translation_completed','translation_failed','revenuecat_initial_purchase',
         'revenuecat_renewal','revenuecat_cancellation','revenuecat_expiration'
