@@ -86,8 +86,11 @@ export function registerTranslationSocket(io: Server): void {
             socket.emit(SOCKET_EVENTS.TRANSLATION_READY, { requestId, text }),
         });
 
-        await recordSuccessfulTranslation(installationId, access.premium);
+        // Livrer d'abord le résultat, puis comptabiliser l'usage. La
+        // comptabilité ne peut ainsi ni retarder la livraison ni faire échouer
+        // une traduction déjà terminée.
         socket.emit(SOCKET_EVENTS.AUDIO_READY, result);
+        await recordSuccessfulTranslation(installationId, access.premium);
       } catch (error) {
         const stage = error instanceof StageError ? error.stage : 'unknown';
         logger.error(`Pipeline ${requestId} en échec (${stage})`, error);
