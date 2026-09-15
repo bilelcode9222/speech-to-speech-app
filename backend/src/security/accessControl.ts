@@ -41,8 +41,8 @@ function memoryUsage(installationId: string): MemoryUsage {
 }
 
 function getPool(): any | null {
-  if (!config.databaseUrl) return null;
   if (pool) return pool;
+  if (!config.databaseUrl) return null;
 
   // require() évite d'imposer les types pg au compilateur. Le module est une
   // dépendance runtime et Render l'installe avec le backend.
@@ -54,6 +54,13 @@ function getPool(): any | null {
     max: 5,
   });
   return pool;
+}
+
+// Point d'injection réservé aux tests : remplace le magasin de quota par un
+// double afin de vérifier la résilience de la comptabilité sans base réelle.
+export function __setUsageStore(store: any | null): void {
+  pool = store;
+  schemaReady = null;
 }
 
 async function ensureSchema(): Promise<void> {
@@ -180,22 +187,32 @@ export async function recordSuccessfulTranslation(
     return;
   }
 
-  await ensureSchema();
-  if (premium) {
-    await db.query(
-      'INSERT INTO nevi_translation_events (installation_id) VALUES ($1)',
-      [installationId]
-    );
-    return;
-  }
+  // La traduction est déjà terminée quand cette comptabilité s'exécute. Une
+  // panne passagère du magasin de quota ne doit jamais transformer un succès
+  // en échec « inconnu » côté client : on journalise et on continue.
+  try {
+    await ensureSchema();
+    if (premium) {
+      await db.query(
+        'INSERT INTO nevi_translation_events (installation_id) VALUES ($1)',
+        [installationId]
+      );
+      return;
+    }
 
-  await db.query(
-    `INSERT INTO nevi_usage (installation_id, free_used)
-     VALUES ($1, 1)
-     ON CONFLICT (installation_id)
-     DO UPDATE SET free_used = LEAST($2, nevi_usage.free_used + 1)`,
-    [installationId, FREE_TRANSLATION_LIMIT]
-  );
+    await db.query(
+      `INSERT INTO nevi_usage (installation_id, free_used)
+       VALUES ($1, 1)
+       ON CONFLICT (installation_id)
+       DO UPDATE SET free_used = LEAST($2, nevi_usage.free_used + 1)`,
+      [installationId, FREE_TRANSLATION_LIMIT]
+    );
+  } catch (error) {
+    logger.error(
+      'Comptage du quota impossible après une traduction réussie',
+      error
+    );
+  }
 }
 
 export function accessMessage(code: AccessCode): string {

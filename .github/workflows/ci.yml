@@ -27,6 +27,11 @@ jobs:
           ANONYMOUS_SESSION_SECRET: ci-session-secret-long-enough-for-nevi
           AI_PROVIDER: device
           TTS_PROVIDER: device
+      - run: npm test
+        env:
+          ANONYMOUS_SESSION_SECRET: ci-session-secret-long-enough-for-nevi
+          AI_PROVIDER: device
+          TTS_PROVIDER: device
       - run: npm run build
         env:
           ANONYMOUS_SESSION_SECRET: ci-session-secret-long-enough-for-nevi
