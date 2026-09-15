@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { setAudioModeAsync } from 'expo-audio';
 
 import { FaceToFaceView } from '../components/FaceToFaceView';
 import { LanguageSelector } from '../components/LanguageSelector';
@@ -25,6 +24,7 @@ import { MAX_RECORDING_MS, SERVER_URL } from '../constants/config';
 import { useTranslationSocket } from '../hooks/useTranslationSocket';
 import { useSilenceDetection } from '../hooks/useSilenceDetection';
 import {
+  activateRecordingMode,
   deleteRecording,
   formatFromUri,
   prepareAudioSession,
@@ -176,21 +176,21 @@ export function ConversationScreen() {
 
   const startRecording = useCallback(
     async (side: Side, from: string, to: string) => {
-      let ready = micReady;
-      if (!ready) {
-        ready = await prepareAudioSession();
-        setMicReady(ready);
-        if (!ready) {
-          Alert.alert(t('micDenied'), t('micDeniedBody'));
-          return;
-        }
-      }
-
       try {
+        let ready = micReady;
+        if (!ready) {
+          ready = await prepareAudioSession();
+          setMicReady(ready);
+          if (!ready) {
+            Alert.alert(t('micDenied'), t('micDeniedBody'));
+            return;
+          }
+        }
+
         // Ne jamais laisser la voix de Nevi rentrer dans le prochain micro.
         await Promise.allSettled([stopAudioPlayback(), Promise.resolve(stopSpeaking())]);
         directionRef.current = { from, to };
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await activateRecordingMode();
         await recorder.prepareToRecordAsync();
         startedAt.current = Date.now();
         recorder.record();
