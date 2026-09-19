@@ -143,7 +143,7 @@ app.post('/webhooks/revenuecat', async (req, res) => {
 
   try {
     await recordRevenueCatAnalytics(req.body);
-    res.status(204).end();
+    res.status(200).end();
   } catch (error) {
     logger.error('Webhook RevenueCat non enregistré', error);
     res.status(502).json({ error: 'Événement RevenueCat non enregistré.' });
