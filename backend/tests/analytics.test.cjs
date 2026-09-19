@@ -21,7 +21,7 @@ after(async()=>db.close());
 test('Money uses production charges, excludes free trials and sandbox, and deduplicates webhook retries',async()=>{
  await db.exec('TRUNCATE nevi_analytics_events');
  await add('returning','app_opened',{},40*24);
- await add('returning','app_opened',{app_locale:'fr',app_build:'41'});
+ await add('returning','app_opened',{app_locale:'fr',app_build:'41',app_version:'1.0.2'});
  await add('new','app_opened',{session_id:'session-A'});
  await add('new','subscription_purchased',{trial_eligible:true});
  const rc={environment:'PRODUCTION',revenuecat_event_id:'trial-1',period_type:'TRIAL',revenue_usd:5.99,country_code:'FR'};
@@ -38,6 +38,8 @@ test('Money uses production charges, excludes free trials and sandbox, and dedup
  assert.equal(s.economics.technicalCostUsd,.12);assert.equal(s.economics.incompleteCostEvents,1);
  assert.equal(s.customers.find(c=>c.installationId==='returning').acquisitionCostUsd,0);
  assert.equal(s.customers.find(c=>c.installationId==='returning').incompleteCostEvents,1);
+ assert.equal(s.customers.find(c=>c.installationId==='returning').appVersion,'1.0.2');
+ assert.equal(s.customers.find(c=>c.installationId==='new').appVersion,null);
  assert.match(s.customers.find(c=>c.installationId==='returning').lastSeenAt,/T/);
  assert.equal(s.countries.length,1);assert.equal(s.countries[0].code,'FR');assert.equal(s.countries[0].revenueUsd,5.99);
  assert.equal(s.daily.reduce((sum,d)=>sum+d.revenueUsd,0),5.99);assert.equal(s.previous.users,1);

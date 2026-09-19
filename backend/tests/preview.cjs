@@ -13,7 +13,7 @@ const {PGlite}=require(process.env.NEVI_PGLITE_MODULE||'@electric-sql/pglite');
  const add=async(id,event,props,seconds)=>db.query('INSERT INTO nevi_analytics_events(installation_id,event_name,properties,occurred_at) VALUES($1,$2,$3::jsonb,NOW()-($4::int*interval \'1 second\'))',[id,event,JSON.stringify(props),seconds]);
  for(let i=0;i<24;i++){
   const id='demo_installation_'+String(i+1).padStart(4,'0'),age=i<3?120+i*15:(i+1)*86400;
-  const p={app_locale:locales[i%5],app_build:i%2?'41':'future',...(i%2?{}:{session_id:'demo_session_'+i})};
+  const p={app_locale:locales[i%5],app_version:'1.0.2',app_build:i%2?'41':'future',...(i%2?{}:{session_id:'demo_session_'+i})};
   await add(id,'app_opened',p,age+30);await add(id,'paywall_step_viewed',{...p,step:1},age+29);
   if(i%4!==0)await add(id,'paywall_step_viewed',{...p,step:2},age+28);
   if(i%3!==0)await add(id,'paywall_step_viewed',{...p,step:3},age+27);

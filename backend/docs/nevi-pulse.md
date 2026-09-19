@@ -29,6 +29,11 @@ prepared locally adds session, screen, button, language, recording, pipeline,
 authorization and purchase outcome events; it has **not been uploaded as a new
 iOS build**. Build 41 and the pending App Store submission are unchanged.
 
+Open journeys refresh every 30 seconds while the page is visible, including
+after returning to the tab. Manual refresh is also available. Expanded details
+and the reading position are retained. The app version is shown when received;
+a missing session or build identifier does not imply an outdated app version.
+
 The future client stores a bounded queue (300 events, up to seven days), retries
 network failures and retains event IDs across retries. Server storage ignores
 repeated IDs per installation. Only a metadata allowlist is accepted. Audio,

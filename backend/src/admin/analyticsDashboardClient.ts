@@ -104,12 +104,12 @@ function render() {
  $('updated').textContent='Mis à jour le '+date(data.generatedAt)+' · Heure de Paris';
  const notices=[];
  if(!h.firstEventAt)notices.push('Aucun événement reçu pour le moment. Vos données apparaîtront ici après les premières utilisations.');
- else if(h.appEvents && !h.detailedEvents)notices.push('Les versions actuellement observées transmettent les actions principales. Le détail des sessions, boutons et temps passés sera disponible avec une prochaine version instrumentée.');
+ else if(h.appEvents && !h.detailedEvents)notices.push('Les actions principales remontent. Les événements reçus ne contiennent pas encore tous les détails des sessions, boutons et durées : ce suivi est préparé pour une prochaine version de l’app.');
  else if(h.appEvents && h.detailedEvents<h.appEvents)notices.push('Les détails du parcours varient selon la version installée. Certaines actions anciennes n’ont pas de session ni de durée.');
  if(!h.webhookConfigured)notices.push('La confirmation des achats RevenueCat n’est pas configurée. Les ventes et essais ne peuvent pas encore être mesurés.');
  $('dataBanner').hidden=!notices.length;$('dataBanner').textContent=notices.join(' ');
  $('metrics').innerHTML=metric('Utilisateurs actifs',count(s.users),'Installations observées',p.users,s.users)+metric('Essais gratuits confirmés',h.webhookConfigured?count(s.trials):'—',h.webhookConfigured?'Confirmés par RevenueCat':'Connexion des achats à terminer',h.webhookConfigured?p.trials:null,s.trials)+metric('Ventes confirmées',h.webhookConfigured?money(s.revenueUsd):'—',h.webhookConfigured?count(s.charges)+' paiements · hors essais':'Connexion des achats à terminer',h.webhookConfigured?p.revenueUsd:null,s.revenueUsd)+metric('Traductions reçues',count(s.translations),'Résultats arrivés dans l’app',p.translations,s.translations);
- $('peopleStats').innerHTML=metric('Utilisateurs actifs',count(s.users),'Sur la période sélectionnée')+metric('Nouveaux utilisateurs observés',count(e.newUsers),'Première activité connue')+metric('Sessions identifiées',s.sessions?count(s.sessions):'—',s.sessions?'Sessions avec un identifiant':'Non transmises par les anciennes versions')+metric('Utilisateurs ayant payé',h.webhookConfigured?count(s.payingUsers):'—',h.webhookConfigured?'Au moins un paiement sur la période':'Confirmation des achats indisponible');
+ $('peopleStats').innerHTML=metric('Utilisateurs actifs',count(s.users),'Sur la période sélectionnée')+metric('Nouveaux utilisateurs observés',count(e.newUsers),'Première activité connue')+metric('Sessions identifiées',s.sessions?count(s.sessions):'—',s.sessions?'Sessions avec un identifiant':'Identifiants de session non transmis')+metric('Utilisateurs ayant payé',h.webhookConfigured?count(s.payingUsers):'—',h.webhookConfigured?'Au moins un paiement sur la période':'Confirmation des achats indisponible');
  $('liveUsers').textContent=count(data.live.users);$('countryCount').textContent=count(data.countries.filter(c=>/^[A-Z]{2}$/.test(c.code)).length);
  $('worldCountries').innerHTML=data.countries.filter(c=>/^[A-Z]{2}$/.test(c.code)).slice(0,4).map(c=>'<button class="btn" data-country="'+esc(c.code)+'">'+esc(country(c.code))+' <strong>'+count(c.users)+'</strong></button>').join('') || '<span class="small muted">Aucun pays d’achat confirmé sur cette période.</span>';
  renderChart();renderFunnel();renderPeople();renderMoney();renderQuality();renderInsights();
@@ -140,7 +140,7 @@ function renderChart() {
 }
 function visiblePeople() {
  if(!data)return[];const query=$('peopleSearch').value.trim().toLowerCase();
- return data.customers.filter(c=>(filter==='all'||filter==='trial'&&c.trials>0||filter==='paid'&&c.charges>0||filter==='translated'&&c.translations>0)&&(!query||[c.installationId,person(c.installationId),language(c.locale),names[c.lastEvent]||c.lastEvent].join(' ').toLowerCase().includes(query)));
+ return data.customers.filter(c=>(filter==='all'||filter==='trial'&&c.trials>0||filter==='paid'&&c.charges>0||filter==='translated'&&c.translations>0)&&(!query||[c.installationId,person(c.installationId),language(c.locale),c.appVersion,c.build,names[c.lastEvent]||c.lastEvent].join(' ').toLowerCase().includes(query)));
 }
 function personButton(c){return '<button class="person" data-person="'+esc(c.installationId)+'"><span class="person-icon">'+esc(String(c.installationId).slice(-2).toUpperCase())+'</span><span>'+esc(person(c.installationId))+(c.isNew?'<small>Nouveau sur la période</small>':'<small>Installation pseudonyme</small>')+'</span></button>';}
 function renderPeople() {
@@ -163,7 +163,7 @@ function renderQuality() {
  $('failureRows').innerHTML=data.failures.map(r=>'<div class="source-line"><div><strong>'+esc(failureNames[r.stage]||labelValue(r.stage))+'</strong><p class="tiny muted">'+esc(names[r.event]||r.event)+'</p></div><span class="tag bad">'+count(r.count)+'</span></div>').join('') || '<div class="empty">Aucune erreur reçue sur cette période.</div>';
  $('languageRows').innerHTML=data.languages.map(r=>'<div class="source-line"><div><strong>'+esc(language(r.locale))+'</strong><p class="tiny muted">'+count(r.translations)+' traductions reçues</p></div><span class="tag">'+count(r.users)+' utilisateurs</span></div>').join('') || '<div class="empty">Aucune langue d’interface reçue.</div>';
  const source=(label,text,status)=>'<div class="source-line"><div><strong>'+label+'</strong><p class="small muted">'+esc(text)+'</p></div><span class="tag '+status[0]+'">'+status[1]+'</span></div>';
- $('sourceHealth').innerHTML=source('Événements de l’app','Dernier reçu : '+date(h.lastAppEventAt),h.lastAppEventAt?['good','Reçus']:['warn','En attente'])+source('Achats RevenueCat','Dernier reçu : '+date(h.lastWebhookAt),!h.webhookConfigured?['warn','À configurer']:h.lastWebhookAt?['good','Reçus']:['','En attente'])+source('Détails des sessions',count(h.detailedEvents)+' événements détaillés sur '+count(h.appEvents),h.detailedEvents?['good','Disponibles']:['','Ancienne version'])+source('Événements Sandbox','Exclus des revenus et essais de production',['',count(h.sandboxEvents)])+source('Début de l’historique',date(h.firstEventAt),['','Données reçues']);
+ $('sourceHealth').innerHTML=source('Événements de l’app','Dernier reçu : '+date(h.lastAppEventAt),h.lastAppEventAt?['good','Reçus']:['warn','En attente'])+source('Achats RevenueCat','Dernier reçu : '+date(h.lastWebhookAt),!h.webhookConfigured?['warn','À configurer']:h.lastWebhookAt?['good','Reçus']:['','En attente'])+source('Détails des sessions',count(h.detailedEvents)+' événements détaillés sur '+count(h.appEvents),h.detailedEvents?['good','Disponibles']:['','Non transmis'])+source('Événements Sandbox','Exclus des revenus et essais de production',['',count(h.sandboxEvents)])+source('Début de l’historique',date(h.firstEventAt),['','Données reçues']);
  $('countryRows').innerHTML=data.countries.map(c=>'<tr><td>'+esc(country(c.code))+'</td><td>'+count(c.users)+'</td><td>'+count(c.trials)+'</td><td>'+money(c.revenueUsd)+'</td></tr>').join('') || '<tr><td colspan="4"><div class="empty">Aucun pays transmis pour cette période.</div></td></tr>';
 }
 function renderInsights() {
@@ -178,30 +178,35 @@ function renderInsights() {
  if(!h.detailedEvents)items.push(['Le suivi détaillé se prépare','Les actions déjà transmises sont consultables. Les données manquantes ne peuvent pas être récupérées rétroactivement.','']);
  $('insights').innerHTML=items.slice(0,5).map(i=>'<div class="insight"><span class="insight-bullet '+i[2]+'">'+(i[2]?'!':'↗')+'</span><div><h3>'+esc(i[0])+'</h3><p>'+esc(i[1])+'</p></div></div>').join('');
 }
-async function openJourney(id) {
+async function openJourney(id, updating=false) {
  if(journeyController)journeyController.abort();journeyController=new AbortController();const controller=journeyController;
- journeyId=id;activeJourney=null;focusBeforeDrawer=document.activeElement;
- $('journeyDrawer').hidden=false;$('drawerBackdrop').hidden=false;$('app').inert=true;document.body.style.overflow='hidden';$('closeJourney').focus();
- $('journeyTitle').textContent=person(id);$('journeyCount').textContent='Chargement du parcours…';$('exportJourney').disabled=true;
+ const wasUpdating=updating&&journeyId===id;
+ const body=$('journeyBody');
+ journeyId=id;if(!wasUpdating){activeJourney=null;focusBeforeDrawer=document.activeElement;}
+ $('journeyDrawer').hidden=false;$('drawerBackdrop').hidden=false;$('app').inert=true;document.body.style.overflow='hidden';if(!wasUpdating)$('closeJourney').focus();
+ $('journeyTitle').textContent=person(id);if(!wasUpdating){$('journeyCount').textContent='Chargement du parcours…';$('exportJourney').disabled=true;}$('refreshJourney').disabled=true;
  const c=data.customers.find(c=>c.installationId===id);
- $('journeyMeta').innerHTML='<p class="tiny muted" style="overflow-wrap:anywhere">'+esc(id)+'</p>'+(c?'<div class="chips"><span class="tag">'+esc(language(c.locale))+'</span><span class="tag">'+(c.build?'Build '+esc(c.build):'Build non transmis')+'</span><span class="tag">Première activité : '+esc(date(c.firstSeenAt))+'</span></div>':'');
- $('journeyBody').innerHTML='<div class="empty">Lecture des événements…</div>';
+ $('journeyMeta').innerHTML='<p class="tiny muted" style="overflow-wrap:anywhere">'+esc(id)+'</p>'+(c?'<div class="chips"><span class="tag">'+(c.appVersion?'App '+esc(c.appVersion):'Version non transmise')+'</span><span class="tag">'+esc(language(c.locale))+'</span><span class="tag">'+(c.build?'Build '+esc(c.build):'Build non transmis')+'</span><span class="tag">Première activité : '+esc(date(c.firstSeenAt))+'</span></div>':'');
+ if(!wasUpdating)$('journeyBody').innerHTML='<div class="empty">Lecture des événements…</div>';
  const timeout=setTimeout(()=>controller.abort(),25000);
  try {
   const result=await getJson('/api/admin/analytics/journey?installation='+encodeURIComponent(id)+'&period='+data.period,controller.signal);
-  if(journeyId!==id)return;activeJourney=result;$('exportJourney').disabled=!result.events.length;
-  $('journeyCount').textContent=(result.hasMore?'500 dernières actions':count(result.events.length)+' actions')+' · plus récentes d’abord';
+  if(journeyId!==id||journeyController!==controller)return;activeJourney=result;$('exportJourney').disabled=!result.events.length;
+  const previousTop=body.scrollTop,previousHeight=body.scrollHeight,focusedEvent=document.activeElement?.closest('details')?.dataset.event;
+  const expanded=new Set(Array.from(body.querySelectorAll('details[open]')).map(el=>el.dataset.event));
+  $('journeyCount').textContent=(result.hasMore?'500 dernières actions':count(result.events.length)+' actions')+' · actualisé à '+date(new Date().toISOString(),true);
   let group='';const html=result.events.map(e=>{
    const current=e.sessionId||'legacy',dateGroup=e.timestamp?day(e.timestamp):'Date inconnue',key=current+dateGroup;
-   let header='';if(key!==group){group=key;header='<li class="session-heading">'+esc(dateGroup)+'<p class="tiny muted">'+(e.sessionId?'Session · '+esc(e.sessionId.slice(-8)):(e.event.startsWith('revenuecat_')?'Confirmation du service d’abonnement':'Session non transmise par cette version'))+'</p></li>';}
+   let header='';if(key!==group){group=key;header='<li class="session-heading">'+esc(dateGroup)+'<p class="tiny muted">'+(e.sessionId?'Session · '+esc(e.sessionId.slice(-8)):(e.event.startsWith('revenuecat_')?'Confirmation du service d’abonnement':'Identifiant de session non transmis'))+'</p></li>';}
    const details=eventDetails(e);const technical=Object.entries(e.properties).filter(([key])=>key!=='session_id').map(([key,value])=>key+' : '+value).join('\n');
-   return header+'<li><time datetime="'+esc(e.timestamp)+'">'+esc(date(e.timestamp,true))+'</time><div class="event-title">'+esc(eventTitle(e))+'</div>'+(details.length?'<div class="chips">'+details.map(v=>'<span class="tag">'+esc(v)+'</span>').join(''):'')+(technical?'<details><summary>Détails techniques</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px">'+esc(technical)+'</pre></details>':'')+'</li>';
+   return header+'<li><time datetime="'+esc(e.timestamp)+'">'+esc(date(e.timestamp,true))+'</time><div class="event-title">'+esc(eventTitle(e))+'</div>'+(details.length?'<div class="chips">'+details.map(v=>'<span class="tag">'+esc(v)+'</span>').join(''):'')+(technical?'<details data-event="'+esc(e.id)+'"'+(wasUpdating&&expanded.has(e.id)?' open':'')+'><summary>Détails techniques</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px">'+esc(technical)+'</pre></details>':'')+'</li>';
   }).join('');
   $('journeyBody').innerHTML=html?'<ol class="timeline">'+html+'</ol>'+(result.hasMore?'<p class="small muted">Limité aux 500 dernières actions de la période sélectionnée.</p>':''):'<div class="empty">Aucune action détaillée reçue pour cette installation sur la période.</div>';
- } catch(error) {if(journeyId===id){$('journeyCount').textContent='Parcours indisponible';$('journeyBody').innerHTML='<div class="empty">'+esc(error.name==='AbortError'?'La lecture a pris trop de temps. Fermez puis rouvrez ce parcours.':error.message)+'</div>';}}
- finally {clearTimeout(timeout);}
+  if(wasUpdating){if(focusedEvent){const detail=Array.from(body.querySelectorAll('details')).find(el=>el.dataset.event===focusedEvent);if(detail)detail.querySelector('summary').focus({preventScroll:true});}body.scrollTop=previousTop<40?0:Math.max(0,previousTop+body.scrollHeight-previousHeight);}
+ } catch(error) {if(journeyId===id&&journeyController===controller){$('journeyCount').textContent=wasUpdating?'Actualisation interrompue · données précédentes conservées':'Parcours indisponible';if(!wasUpdating)$('journeyBody').innerHTML='<div class="empty">'+esc(error.name==='AbortError'?'La lecture a pris trop de temps. Fermez puis rouvrez ce parcours.':error.message)+'</div>';}}
+ finally {clearTimeout(timeout);if(journeyController===controller)$('refreshJourney').disabled=false;}
 }
-function closeJourney(){journeyId=null;activeJourney=null;if(journeyController)journeyController.abort();$('journeyDrawer').hidden=true;$('drawerBackdrop').hidden=true;$('app').inert=false;document.body.style.overflow='';if(focusBeforeDrawer&&document.contains(focusBeforeDrawer))focusBeforeDrawer.focus();}
+function closeJourney(){const wasOpen=Boolean(journeyId);journeyId=null;activeJourney=null;if(journeyController)journeyController.abort();$('journeyDrawer').hidden=true;$('drawerBackdrop').hidden=true;$('app').inert=false;document.body.style.overflow='';if(wasOpen){if(focusBeforeDrawer&&document.contains(focusBeforeDrawer))focusBeforeDrawer.focus();else $('refresh').focus();}}
 function csvDownload(name, rows){
  const cell=value=>{let s=String(value==null?'':value);if(/^[\s]*[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
  const csv='\uFEFF'+rows.map(row=>row.map(cell).join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -215,6 +220,7 @@ $('refresh').addEventListener('click',refresh);
 $('period').addEventListener('change',async()=>{if(requestController&&busy)requestController.abort();while(busy)await new Promise(resolve=>setTimeout(resolve,25));closeJourney();refresh();});
 $('peopleSearch').addEventListener('input',renderPeople);
 $('quickSearch').addEventListener('click',()=>{navigate('people');$('peopleSearch').focus();});
+$('refreshJourney').addEventListener('click',()=>{if(journeyId)void openJourney(journeyId,true);});
 $('closeJourney').addEventListener('click',closeJourney);$('drawerBackdrop').addEventListener('click',closeJourney);
 let rotation=-20, paused=matchMedia('(prefers-reduced-motion: reduce)').matches, drag=null,lastFrame=0,frame=0;
 const globe=$('globe'),ctx=globe.getContext('2d');
@@ -247,8 +253,9 @@ $('globePause').addEventListener('click',()=>setPause(!paused));$('globeReset').
 window.addEventListener('resize',drawGlobe);
 document.addEventListener('click',event=>{const target=event.target.closest('button');if(!target)return;if(target.dataset.page||target.dataset.nav)navigate(target.dataset.page||target.dataset.nav);if(target.dataset.chart){chartKey=target.dataset.chart;renderChart();}if(target.dataset.filter){filter=target.dataset.filter;renderPeople();}if(target.dataset.person)openJourney(target.dataset.person);if(target.dataset.country){const c=NEVI_GLOBE.countries.find(c=>c.code===target.dataset.country);if(c){rotation=-c.lon;setPause(true);drawGlobe();}}});
 document.addEventListener('keydown',event=>{if($('journeyDrawer').hidden)return;if(event.key==='Escape')closeJourney();if(event.key==='Tab'){const items=Array.from($('journeyDrawer').querySelectorAll('button:not([disabled]),summary,[tabindex="0"]'));const first=items[0],last=items[items.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
-setInterval(()=>{if(!document.hidden&&token&&!journeyId)refresh();},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&token&&!journeyId)refresh();});
+async function refreshAll(){if(!token||document.hidden)return;await refresh();if(journeyId&&!$('refreshJourney').disabled)await openJourney(journeyId,true);}
+setInterval(refreshAll,30000);
+document.addEventListener('visibilitychange',refreshAll);
 if(token){$('app').hidden=false;refresh();}else showLogin();
 })();
 `;
