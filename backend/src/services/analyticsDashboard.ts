@@ -1,136 +1,68 @@
 import { config } from '../config/env';
 import { analyticsStoreConfigured, queryAnalytics } from './analyticsStore';
+export type AnalyticsPeriod = 1 | 7 | 14 | 30 | 90;
+type Row = Record<string, any>;
+const num = (v: unknown): number => Number.isFinite(Number(v)) ? Number(v) : 0;
+const iso = (v: unknown): string | null => v instanceof Date ? v.toISOString() : typeof v === 'string' && v ? v : null;
+// Repeated webhook deliveries must never inflate sales. No historical rows are deleted.
+const base = `WITH deduplicated AS (
+ SELECT DISTINCT ON (CASE WHEN event_name LIKE 'revenuecat_%' AND NULLIF(properties->>'revenuecat_event_id','') IS NOT NULL
+ THEN 'rc:' || (properties->>'revenuecat_event_id') ELSE 'row:' || id::text END) * FROM nevi_analytics_events
+ ORDER BY CASE WHEN event_name LIKE 'revenuecat_%' AND NULLIF(properties->>'revenuecat_event_id','') IS NOT NULL
+ THEN 'rc:' || (properties->>'revenuecat_event_id') ELSE 'row:' || id::text END, id
+), events AS (
+ SELECT *, properties->>'environment'='PRODUCTION' AS production,
+ CASE WHEN COALESCE(properties->>'revenue_usd','') ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (properties->>'revenue_usd')::numeric ELSE 0 END AS revenue,
+ CASE WHEN COALESCE(properties->>'estimated_cost_usd','') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (properties->>'estimated_cost_usd')::numeric ELSE 0 END AS cost FROM deduplicated
+), current_events AS (SELECT * FROM events WHERE occurred_at>=NOW()-($1::int*INTERVAL '1 day'))`;
+const charged = `production AND event_name IN ('revenuecat_initial_purchase','revenuecat_renewal','revenuecat_non_renewing_purchase') AND COALESCE(properties->>'period_type','')<>'TRIAL'`;
+const trial = `production AND event_name='revenuecat_initial_purchase' AND properties->>'period_type'='TRIAL'`;
+const metrics = `COUNT(DISTINCT installation_id) FILTER(WHERE event_name NOT LIKE 'revenuecat_%') AS users,
+ COUNT(*) FILTER(WHERE event_name='app_opened') AS opens, COUNT(DISTINCT properties->>'session_id') FILTER(WHERE event_name NOT LIKE 'revenuecat_%') AS sessions,
+ COUNT(*) FILTER(WHERE event_name='translation_completed') AS translations, COUNT(*) FILTER(WHERE event_name='translation_failed') AS failures,
+ COUNT(*) FILTER(WHERE ${trial}) AS trials, COUNT(*) FILTER(WHERE ${charged} AND revenue>0) AS charges,
+ COUNT(DISTINCT installation_id) FILTER(WHERE ${charged} AND revenue>0) AS paying_users, COALESCE(SUM(revenue) FILTER(WHERE ${charged}),0) AS revenue,
+ COUNT(*) FILTER(WHERE production AND event_name='revenuecat_renewal') AS renewals,
+ COUNT(*) FILTER(WHERE production AND event_name='revenuecat_renewal' AND properties->>'is_trial_conversion'='true') AS trial_conversions,
+ COUNT(*) FILTER(WHERE production AND event_name='revenuecat_cancellation') AS cancellations,
+ COALESCE(SUM(cost) FILTER(WHERE event_name='translation_cost_recorded'),0) AS ai_cost,
+ COUNT(*) FILTER(WHERE event_name='translation_cost_recorded') AS cost_events,
+ COUNT(*) FILTER(WHERE event_name='translation_cost_recorded' AND COALESCE(properties->>'cost_estimate_complete','false')<>'true') AS incomplete_costs`;
+export function normalizePeriod(value: unknown): AnalyticsPeriod {const days=Number(value);return [1,7,14,30,90].includes(days)?days as AnalyticsPeriod:30;}
+export function mapMetrics(r: Row = {}) {return {users:num(r.users),opens:num(r.opens),sessions:num(r.sessions),translations:num(r.translations),failures:num(r.failures),trials:num(r.trials),charges:num(r.charges),payingUsers:num(r.paying_users),revenueUsd:num(r.revenue),renewals:num(r.renewals),trialConversions:num(r.trial_conversions),cancellations:num(r.cancellations),aiCostUsd:num(r.ai_cost),costEvents:num(r.cost_events),incompleteCosts:num(r.incomplete_costs)};}
 
-export type AnalyticsPeriod = 7 | 14 | 30;
-
-export interface AnalyticsSnapshot {
-  period: AnalyticsPeriod;
-  generatedAt: string;
-  summary: {
-    activeUsers: number; onboardingStarted: number; onboardingCompleted: number;
-    paywallViews: number; checkoutStarts: number; trialStarts: number; purchases: number;
-    revenueUsd: number; renewals: number; cancellations: number; translations: number;
-    translationFailures: number;
-  };
-  daily: Array<{ date: string; activeUsers: number; paywallViews: number; trialStarts: number; purchases: number; translations: number }>;
-  languages: Array<{ locale: string; users: number; translations: number }>;
-  failures: Array<{ stage: string; count: number }>;
-  recent: Array<{ timestamp: string; installationId: string; event: string; detail: string }>;
-  economics: {
-    grossRevenueUsd: number; estimatedNetRevenueUsd: number; technicalCostUsd: number;
-    acquisitionCostUsd: number; estimatedMarginUsd: number; acquisitionCostPerUserUsd: number;
-    storeNetRevenueShare: number; incompleteCostEvents: number;
-  };
-  customers: Array<{
-    installationId: string; grossRevenueUsd: number; estimatedNetRevenueUsd: number;
-    technicalCostUsd: number; acquisitionCostUsd: number; estimatedMarginUsd: number;
-    translations: number; incompleteCostEvents: number;
-  }>;
+export async function loadAnalyticsSnapshot(period: AnalyticsPeriod) {
+ const [totals,daily,people,countries,languages,failures,live,health,funnel,recent]=await Promise.all([
+  queryAnalytics<Row>(`${base} SELECT 'current' AS period_kind,${metrics} FROM current_events UNION ALL SELECT 'previous' AS period_kind,${metrics} FROM events WHERE occurred_at>=NOW()-($1::int*2*INTERVAL '1 day') AND occurred_at<NOW()-($1::int*INTERVAL '1 day')`,[period]),
+  queryAnalytics<Row>(`${base}, dates AS (SELECT generate_series(((NOW() AT TIME ZONE 'UTC')-($1::int*INTERVAL '1 day'))::date,(NOW() AT TIME ZONE 'UTC')::date,INTERVAL '1 day') AS day), daily AS (SELECT (occurred_at AT TIME ZONE 'UTC')::date AS day,${metrics} FROM current_events GROUP BY 1) SELECT TO_CHAR(dates.day,'YYYY-MM-DD') AS date,daily.* FROM dates LEFT JOIN daily USING(day) ORDER BY dates.day`,[period]),
+  queryAnalytics<Row>(`${base}, first_seen AS (SELECT installation_id,MIN(occurred_at) AS first_seen FROM events WHERE event_name NOT LIKE 'revenuecat_%' GROUP BY installation_id) SELECT e.installation_id,MIN(f.first_seen) AS first_seen,MAX(e.occurred_at) AS last_seen,COUNT(*) FILTER(WHERE event_name NOT IN ('session_heartbeat','translation_cost_recorded')) AS events,COUNT(DISTINCT e.properties->>'session_id') AS sessions,COUNT(*) FILTER(WHERE event_name='translation_completed') AS translations,COUNT(*) FILTER(WHERE ${trial}) AS trials,COUNT(*) FILTER(WHERE ${charged} AND revenue>0) AS charges,COALESCE(SUM(revenue) FILTER(WHERE ${charged}),0) AS revenue,COALESCE(SUM(cost) FILTER(WHERE event_name='translation_cost_recorded'),0) AS ai_cost,COUNT(*) FILTER(WHERE event_name='translation_cost_recorded' AND COALESCE(properties->>'cost_estimate_complete','false')<>'true') AS incomplete_costs,
+   (array_agg(event_name ORDER BY e.occurred_at DESC,e.id DESC) FILTER(WHERE event_name NOT IN ('session_heartbeat','translation_cost_recorded')))[1] AS last_event,
+   (array_agg(properties->>'app_locale' ORDER BY e.occurred_at DESC) FILTER(WHERE properties->>'app_locale' IS NOT NULL))[1] AS locale,
+   (array_agg(properties->>'app_build' ORDER BY e.occurred_at DESC) FILTER(WHERE properties->>'app_build' IS NOT NULL))[1] AS build
+   FROM current_events e LEFT JOIN first_seen f USING(installation_id) GROUP BY e.installation_id ORDER BY last_seen DESC LIMIT 200`,[period]),
+  queryAnalytics<Row>(`${base} SELECT UPPER(COALESCE(NULLIF(properties->>'country_code',''),'UNKNOWN')) AS country,COUNT(*) FILTER(WHERE ${trial}) AS trials,COUNT(*) FILTER(WHERE ${charged} AND revenue>0) AS charges,COUNT(DISTINCT installation_id) AS users,COALESCE(SUM(revenue) FILTER(WHERE ${charged}),0) AS revenue FROM current_events WHERE production AND event_name IN ('revenuecat_initial_purchase','revenuecat_renewal','revenuecat_non_renewing_purchase') GROUP BY 1 ORDER BY users DESC`,[period]),
+  queryAnalytics<Row>(`${base}, locales AS (SELECT DISTINCT ON(installation_id) installation_id,properties->>'app_locale' AS locale FROM events WHERE NULLIF(properties->>'app_locale','') IS NOT NULL ORDER BY installation_id,occurred_at DESC) SELECT COALESCE(l.locale,'unknown') AS locale,COUNT(DISTINCT e.installation_id) AS users,COUNT(*) FILTER(WHERE event_name='translation_completed') AS translations FROM current_events e LEFT JOIN locales l USING(installation_id) WHERE event_name NOT LIKE 'revenuecat_%' GROUP BY 1 ORDER BY users DESC LIMIT 20`,[period]),
+  queryAnalytics<Row>(`${base} SELECT COALESCE(properties->>'failure_stage',properties->>'failure_reason',properties->>'operation','other') AS stage,event_name AS event,COUNT(*) AS count FROM current_events WHERE event_name IN ('translation_failed','client_error','subscription_purchase_failed') GROUP BY 1,2 ORDER BY count DESC LIMIT 20`,[period]),
+  queryAnalytics<Row>(`${base} SELECT COUNT(DISTINCT installation_id) FILTER(WHERE event_name IN ('app_opened','app_resumed','session_heartbeat','screen_viewed','translation_recording_started','translation_completed','paywall_step_viewed')) AS users,COUNT(*) FILTER(WHERE event_name='translation_completed') AS translations FROM events WHERE occurred_at>=NOW()-INTERVAL '5 minutes'`,[period]),
+  queryAnalytics<Row>(`${base}, first_seen AS (SELECT installation_id,MIN(occurred_at) AS at FROM events WHERE event_name NOT LIKE 'revenuecat_%' GROUP BY installation_id) SELECT (SELECT COUNT(*) FROM first_seen WHERE at>=NOW()-($1::int*INTERVAL '1 day')) AS new_users,(SELECT MIN(occurred_at) FROM events) AS first_event,(SELECT MAX(occurred_at) FROM events WHERE event_name LIKE 'revenuecat_%') AS last_webhook,(SELECT MAX(occurred_at) FROM events WHERE event_name NOT LIKE 'revenuecat_%') AS last_app_event,(SELECT COUNT(*) FROM current_events WHERE properties->>'environment'='SANDBOX') AS sandbox_events,(SELECT COUNT(*) FROM current_events WHERE event_name NOT LIKE 'revenuecat_%' AND properties->>'session_id' IS NOT NULL) AS detailed_events,(SELECT COUNT(*) FROM current_events WHERE event_name NOT LIKE 'revenuecat_%') AS app_events`,[period]),
+  queryAnalytics<Row>(`${base}, entries AS (SELECT installation_id,MIN(occurred_at) AS entered FROM current_events WHERE (event_name='paywall_step_viewed' AND properties->>'step'='1') OR event_name='paywall_opened' GROUP BY installation_id),
+   reminder AS (SELECT a.installation_id,a.entered,MIN(e.occurred_at) AS at FROM entries a LEFT JOIN current_events e ON e.installation_id=a.installation_id AND e.occurred_at>=a.entered AND e.event_name='paywall_step_viewed' AND e.properties->>'step'='2' GROUP BY a.installation_id,a.entered),
+   offers AS (SELECT a.installation_id,a.at AS reminder_at,MIN(e.occurred_at) AS at FROM reminder a LEFT JOIN current_events e ON e.installation_id=a.installation_id AND e.occurred_at>=a.at AND e.event_name='paywall_step_viewed' AND e.properties->>'step'='3' GROUP BY a.installation_id,a.at),
+   checkout AS (SELECT a.installation_id,a.at AS offers_at,MIN(e.occurred_at) AS at FROM offers a LEFT JOIN current_events e ON e.installation_id=a.installation_id AND e.occurred_at>=a.at AND e.event_name='subscription_purchase_started' GROUP BY a.installation_id,a.at),
+   access AS (SELECT a.installation_id,MIN(e.occurred_at) AS at FROM checkout a LEFT JOIN current_events e ON e.installation_id=a.installation_id AND e.occurred_at>=a.at AND e.event_name='subscription_purchased' GROUP BY a.installation_id)
+   SELECT (SELECT COUNT(*) FROM entries) AS introduction,(SELECT COUNT(*) FROM reminder WHERE at IS NOT NULL) AS reminder,(SELECT COUNT(*) FROM offers WHERE at IS NOT NULL) AS offers,(SELECT COUNT(*) FROM checkout WHERE at IS NOT NULL) AS checkout,(SELECT COUNT(*) FROM access WHERE at IS NOT NULL) AS access`,[period]),
+  queryAnalytics<Row>(`${base} SELECT id,occurred_at,installation_id,event_name,properties FROM current_events WHERE event_name NOT IN ('session_heartbeat','translation_cost_recorded') ORDER BY occurred_at DESC,id DESC LIMIT 50`,[period]),
+ ]);
+ const summary=mapMetrics(totals.find(r=>r.period_kind==='current')),previous=mapMetrics(totals.find(r=>r.period_kind==='previous')),h=health[0]||{};
+ const share=Math.max(0,Math.min(1,config.unitEconomics.storeNetRevenueShare)),cac=config.unitEconomics.defaultAcquisitionCostUsd,newUsers=num(h.new_users),net=summary.revenueUsd*share,acquisition=newUsers*cac;
+ return {period,generatedAt:new Date().toISOString(),currency:'USD',summary,previous,daily:daily.map(r=>({date:r.date,...mapMetrics(r)})),
+  live:{users:num(live[0]?.users),translations:num(live[0]?.translations),windowMinutes:5},
+  economics:{grossRevenueUsd:summary.revenueUsd,estimatedNetRevenueUsd:net,technicalCostUsd:summary.aiCostUsd,acquisitionCostUsd:acquisition,estimatedMarginUsd:net-summary.aiCostUsd-acquisition,storeNetRevenueShare:share,acquisitionCostPerUserUsd:cac,newUsers,costEvents:summary.costEvents,incompleteCostEvents:summary.incompleteCosts},
+  health:{firstEventAt:iso(h.first_event),lastWebhookAt:iso(h.last_webhook),lastAppEventAt:iso(h.last_app_event),webhookConfigured:Boolean(config.analyticsDashboard.revenueCatWebhookAuthorization),sandboxEvents:num(h.sandbox_events),detailedEvents:num(h.detailed_events),appEvents:num(h.app_events)},
+  countries:countries.map(r=>({code:r.country,users:num(r.users),trials:num(r.trials),charges:num(r.charges),revenueUsd:num(r.revenue)})),languages:languages.map(r=>({locale:r.locale,users:num(r.users),translations:num(r.translations)})),failures:failures.map(r=>({stage:r.stage,event:r.event,count:num(r.count)})),funnel:Object.fromEntries(Object.entries(funnel[0]||{}).map(([k,v])=>[k,num(v)])),
+  customers:people.map(r=>{const first=iso(r.first_seen),isNew=Boolean(first&&Date.parse(first)>=Date.now()-period*86400000),cost=isNew?cac:0;return {installationId:r.installation_id,firstSeenAt:first,lastSeenAt:iso(r.last_seen),lastEvent:r.last_event,locale:r.locale||'unknown',build:r.build||null,events:num(r.events),sessions:num(r.sessions),translations:num(r.translations),trials:num(r.trials),charges:num(r.charges),grossRevenueUsd:num(r.revenue),estimatedNetRevenueUsd:num(r.revenue)*share,technicalCostUsd:num(r.ai_cost),acquisitionCostUsd:cost,estimatedMarginUsd:num(r.revenue)*share-num(r.ai_cost)-cost,incompleteCostEvents:num(r.incomplete_costs),isNew};}),recent:recent.map(mapEvent)};
 }
-
-type Row = Record<string, unknown>;
-
-function n(value: unknown): number { return Number(value) || 0; }
-function s(value: unknown, fallback = '—'): string {
-  return typeof value === 'string' && value.trim() ? value : fallback;
-}
-
-const revenueEvents = "'revenuecat_initial_purchase', 'revenuecat_renewal', 'revenuecat_non_renewing_purchase'";
-
-export async function loadAnalyticsSnapshot(period: AnalyticsPeriod): Promise<AnalyticsSnapshot> {
-  const share = Math.min(1, config.unitEconomics.storeNetRevenueShare);
-  const cac = config.unitEconomics.defaultAcquisitionCostUsd;
-  const since = period;
-  const [summaryRows, dailyRows, languageRows, failureRows, recentRows, economicsRows, customerRows] = await Promise.all([
-    queryAnalytics<Row>(`
-      SELECT
-        COUNT(DISTINCT installation_id) AS active_users,
-        COUNT(*) FILTER (WHERE event_name = 'onboarding_viewed') AS onboarding_started,
-        COUNT(*) FILTER (WHERE event_name = 'onboarding_completed') AS onboarding_completed,
-        COUNT(*) FILTER (WHERE event_name = 'paywall_opened') AS paywall_views,
-        COUNT(*) FILTER (WHERE event_name = 'subscription_purchase_started') AS checkout_starts,
-        COUNT(*) FILTER (WHERE event_name = 'subscription_purchased' AND COALESCE(properties->>'trial_eligible', 'false') = 'true') AS trial_starts,
-        COUNT(*) FILTER (WHERE event_name = 'subscription_purchased' AND COALESCE(properties->>'trial_eligible', 'false') <> 'true') AS purchases,
-        COALESCE(SUM((properties->>'revenue_usd')::numeric) FILTER (WHERE event_name IN (${revenueEvents}) AND properties->>'environment' = 'PRODUCTION'), 0) AS revenue_usd,
-        COUNT(*) FILTER (WHERE event_name = 'revenuecat_renewal' AND properties->>'environment' = 'PRODUCTION') AS renewals,
-        COUNT(*) FILTER (WHERE event_name = 'revenuecat_cancellation' AND properties->>'environment' = 'PRODUCTION') AS cancellations,
-        COUNT(*) FILTER (WHERE event_name = 'translation_completed') AS translations,
-        COUNT(*) FILTER (WHERE event_name = 'translation_failed') AS translation_failures
-      FROM nevi_analytics_events WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day')`, [since]),
-    queryAnalytics<Row>(`
-      SELECT TO_CHAR(DATE(occurred_at), 'YYYY-MM-DD') AS date,
-        COUNT(DISTINCT installation_id) AS active_users,
-        COUNT(*) FILTER (WHERE event_name = 'paywall_opened') AS paywall_views,
-        COUNT(*) FILTER (WHERE event_name = 'subscription_purchased' AND COALESCE(properties->>'trial_eligible', 'false') = 'true') AS trial_starts,
-        COUNT(*) FILTER (WHERE event_name = 'subscription_purchased' AND COALESCE(properties->>'trial_eligible', 'false') <> 'true') AS purchases,
-        COUNT(*) FILTER (WHERE event_name = 'translation_completed') AS translations
-      FROM nevi_analytics_events WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day')
-      GROUP BY DATE(occurred_at) ORDER BY DATE(occurred_at)`, [since]),
-    queryAnalytics<Row>(`
-      SELECT COALESCE(properties->>'app_locale', 'unknown') AS locale,
-        COUNT(DISTINCT installation_id) AS users,
-        COUNT(*) FILTER (WHERE event_name = 'translation_completed') AS translations
-      FROM nevi_analytics_events WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day')
-      GROUP BY 1 ORDER BY users DESC LIMIT 8`, [since]),
-    queryAnalytics<Row>(`
-      SELECT COALESCE(properties->>'failure_stage', properties->>'error_code', 'other') AS stage, COUNT(*) AS count
-      FROM nevi_analytics_events
-      WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day') AND event_name = 'translation_failed'
-      GROUP BY 1 ORDER BY count DESC LIMIT 8`, [since]),
-    queryAnalytics<Row>(`
-      SELECT occurred_at AS timestamp, installation_id, event_name AS event,
-        COALESCE(properties->>'plan', properties->>'product_id', properties->>'failure_stage', properties->>'error_code', properties->>'step', properties->>'granted', '') AS detail
-      FROM nevi_analytics_events
-      WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day') AND event_name IN (
-        'app_opened','onboarding_viewed','onboarding_step_completed','onboarding_completed',
-        'paywall_step_viewed','trial_reminder_permission','paywall_opened','subscription_plan_selected','subscription_purchase_started',
-        'subscription_purchased','subscription_purchase_failed','translation_recording_started',
-        'translation_completed','translation_failed','revenuecat_initial_purchase',
-        'revenuecat_renewal','revenuecat_cancellation','revenuecat_expiration'
-      ) ORDER BY occurred_at DESC LIMIT 80`, [since]),
-    queryAnalytics<Row>(`
-      SELECT
-        COALESCE(SUM((properties->>'revenue_usd')::numeric) FILTER (WHERE event_name IN (${revenueEvents}) AND properties->>'environment' = 'PRODUCTION'), 0) AS gross_revenue_usd,
-        COALESCE(SUM((properties->>'estimated_cost_usd')::numeric) FILTER (WHERE event_name = 'translation_cost_recorded'), 0) AS technical_cost_usd,
-        COUNT(*) FILTER (WHERE event_name = 'translation_cost_recorded' AND COALESCE(properties->>'cost_estimate_complete', 'false') <> 'true') AS incomplete_cost_events
-      FROM nevi_analytics_events WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day')`, [since]),
-    queryAnalytics<Row>(`
-      SELECT installation_id,
-        COALESCE(SUM((properties->>'revenue_usd')::numeric) FILTER (WHERE event_name IN (${revenueEvents}) AND properties->>'environment' = 'PRODUCTION'), 0) AS gross_revenue_usd,
-        COALESCE(SUM((properties->>'estimated_cost_usd')::numeric) FILTER (WHERE event_name = 'translation_cost_recorded'), 0) AS technical_cost_usd,
-        COUNT(*) FILTER (WHERE event_name = 'translation_cost_recorded') AS translations,
-        COUNT(*) FILTER (WHERE event_name = 'translation_cost_recorded' AND COALESCE(properties->>'cost_estimate_complete', 'false') <> 'true') AS incomplete_cost_events
-      FROM nevi_analytics_events WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day')
-      GROUP BY installation_id
-      ORDER BY (COALESCE(SUM((properties->>'revenue_usd')::numeric) FILTER (WHERE event_name IN (${revenueEvents}) AND properties->>'environment' = 'PRODUCTION'), 0) * $2::numeric - COALESCE(SUM((properties->>'estimated_cost_usd')::numeric) FILTER (WHERE event_name = 'translation_cost_recorded'), 0) - $3::numeric) ASC
-      LIMIT 200`, [since, share, cac]),
-  ]);
-
-  const summary = summaryRows[0] ?? {};
-  const economics = economicsRows[0] ?? {};
-  const activeUsers = n(summary.active_users);
-  const grossRevenueUsd = n(economics.gross_revenue_usd);
-  const technicalCostUsd = n(economics.technical_cost_usd);
-  const estimatedNetRevenueUsd = grossRevenueUsd * share;
-  const acquisitionCostUsd = activeUsers * cac;
-
-  return {
-    period, generatedAt: new Date().toISOString(),
-    summary: {
-      activeUsers, onboardingStarted: n(summary.onboarding_started), onboardingCompleted: n(summary.onboarding_completed),
-      paywallViews: n(summary.paywall_views), checkoutStarts: n(summary.checkout_starts), trialStarts: n(summary.trial_starts), purchases: n(summary.purchases),
-      revenueUsd: n(summary.revenue_usd), renewals: n(summary.renewals), cancellations: n(summary.cancellations), translations: n(summary.translations), translationFailures: n(summary.translation_failures),
-    },
-    daily: dailyRows.map((row) => ({ date: s(row.date), activeUsers: n(row.active_users), paywallViews: n(row.paywall_views), trialStarts: n(row.trial_starts), purchases: n(row.purchases), translations: n(row.translations) })),
-    languages: languageRows.map((row) => ({ locale: s(row.locale, 'unknown'), users: n(row.users), translations: n(row.translations) })),
-    failures: failureRows.map((row) => ({ stage: s(row.stage, 'other'), count: n(row.count) })),
-    recent: recentRows.map((row) => ({ timestamp: s(row.timestamp), installationId: s(row.installation_id, 'unknown'), event: s(row.event), detail: s(row.detail, '') })),
-    economics: { grossRevenueUsd, estimatedNetRevenueUsd, technicalCostUsd, acquisitionCostUsd, estimatedMarginUsd: estimatedNetRevenueUsd - technicalCostUsd - acquisitionCostUsd, acquisitionCostPerUserUsd: cac, storeNetRevenueShare: share, incompleteCostEvents: n(economics.incomplete_cost_events) },
-    customers: customerRows.map((row) => {
-      const customerGross = n(row.gross_revenue_usd); const customerTechnical = n(row.technical_cost_usd); const customerNet = customerGross * share;
-      return { installationId: s(row.installation_id, 'unknown'), grossRevenueUsd: customerGross, estimatedNetRevenueUsd: customerNet, technicalCostUsd: customerTechnical, acquisitionCostUsd: cac, estimatedMarginUsd: customerNet - customerTechnical - cac, translations: n(row.translations), incompleteCostEvents: n(row.incomplete_cost_events) };
-    }),
-  };
-}
-
-export function analyticsDashboardConfigured(): boolean { return analyticsStoreConfigured(); }
+const detailKeys=['session_id','app_version','app_build','app_locale','screen','previous_screen','duration_ms','step','plan','product_id','period_type','environment','granted','enabled','source_language','target_language','speaker_side','failure_stage','failure_reason','error_code','operation','button','result','reason','recording_duration_ms','request_id','elapsed_ms','country_code','is_trial_conversion','trial_eligible','stage','field','previous_language','language','theme','face_to_face'];
+export function mapEvent(r:Row){const p=r.properties||{};return {id:String(r.id),timestamp:iso(r.occurred_at),installationId:r.installation_id,event:r.event_name,sessionId:typeof p.session_id==='string'?p.session_id:null,properties:Object.fromEntries(detailKeys.filter(k=>p[k]!==undefined&&p[k]!==null).map(k=>[k,p[k]]))};}
+export async function loadInstallationJourney(installationId:string,period:AnalyticsPeriod){const rows=await queryAnalytics<Row>(`${base} SELECT id,occurred_at,installation_id,event_name,properties FROM current_events WHERE installation_id=$2 AND event_name NOT IN ('session_heartbeat','translation_cost_recorded') ORDER BY occurred_at DESC,id DESC LIMIT 501`,[period,installationId]);return {installationId,period,hasMore:rows.length>500,events:rows.slice(0,500).map(mapEvent)};}
+export function analyticsDashboardConfigured():boolean{return analyticsStoreConfigured();}

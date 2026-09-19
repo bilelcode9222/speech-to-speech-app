@@ -1,3 +1,4 @@
+import { CLIENT_ANALYTICS_EVENTS, safeAnalyticsProperties, clientEventTime } from './services/clientAnalytics';
 import http from 'http';
 import os from 'os';
 import crypto from 'crypto';
@@ -31,13 +32,14 @@ import { invalidateRevenueCatCache } from './services/revenueCatService';
 import { privacyPage, supportPage, termsPage } from './legal/pages';
 import {
   analyticsDashboardConfigured,
+  normalizePeriod, loadInstallationJourney,
   AnalyticsPeriod,
   loadAnalyticsSnapshot,
 } from './services/analyticsDashboard';
 import { analyticsDashboardPage } from './admin/analyticsDashboardPage';
 import { recordRevenueCatAnalytics } from './services/revenueCatAnalytics';
 import { recordTranslationCost } from './services/unitEconomics';
-import { AnalyticsProperties, recordAnalyticsEvent } from './services/analyticsStore';
+import { recordAnalyticsEvent } from './services/analyticsStore';
 
 const app = express();
 
@@ -75,7 +77,17 @@ app.get('/admin/analytics', (_req, res) => {
   res.type('html').send(analyticsDashboardPage());
 });
 
+app.get('/api/admin/analytics/journey', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) { res.status(401).json({ error: 'Accès au tableau de bord refusé.' }); return; }
+  const installation = req.query.installation;
+  if (typeof installation !== 'string' || !/^[A-Za-z0-9_$:.-]{1,180}$/.test(installation)) { res.status(400).json({ error: 'Identifiant d’installation invalide.' }); return; }
+  try { res.json(await loadInstallationJourney(installation, normalizePeriod(req.query.period ?? req.query.days))); }
+  catch (error) { logger.error('Parcours Nevi Pulse indisponible', error); res.status(502).json({error:'Ce parcours ne peut pas être chargé pour le moment.'}); }
+});
+
 app.get('/api/admin/analytics', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) {
     res.status(401).json({ error: 'Accès au tableau de bord refusé.' });
     return;
@@ -88,9 +100,7 @@ app.get('/api/admin/analytics', async (req, res) => {
     return;
   }
 
-  const requestedDays = Number(req.query.days);
-  const period: AnalyticsPeriod =
-    requestedDays === 7 || requestedDays === 14 ? requestedDays : 30;
+  const period: AnalyticsPeriod = normalizePeriod(req.query.period ?? req.query.days);
 
   try {
     res.json(await loadAnalyticsSnapshot(period));
@@ -102,35 +112,6 @@ app.get('/api/admin/analytics', async (req, res) => {
   }
 });
 
-const CLIENT_ANALYTICS_EVENTS = new Set([
-  'app_opened', 'onboarding_viewed', 'onboarding_step_completed', 'onboarding_completed',
-  'paywall_step_viewed', 'trial_reminder_permission', 'paywall_opened', 'subscription_plan_selected', 'subscription_purchase_started',
-  'subscription_purchased', 'subscription_restored', 'subscription_purchase_failed',
-  'subscription_backend_sync_delayed', 'translation_recording_started', 'translation_completed',
-  'translation_failed', 'face_to_face_mode_changed', 'client_error',
-]);
-
-function safeAnalyticsProperties(value: unknown): AnalyticsProperties | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length > 20) return null;
-  const safe: AnalyticsProperties = {};
-  for (const [key, item] of entries) {
-    if (!/^[a-z_]{1,64}$/.test(key)) return null;
-    if (typeof item === 'string') {
-      if (item.length > 80) return null;
-      safe[key] = item;
-    } else if (typeof item === 'number' && Number.isFinite(item)) {
-      safe[key] = item;
-    } else if (typeof item === 'boolean' || item === null) {
-      safe[key] = item;
-    } else {
-      return null;
-    }
-  }
-  return safe;
-}
-
 app.post('/api/analytics/events', requireAnonymousHttpSession, async (req, res) => {
   const event = req.body?.event;
   const properties = safeAnalyticsProperties(req.body?.properties);
@@ -141,7 +122,7 @@ app.post('/api/analytics/events', requireAnonymousHttpSession, async (req, res) 
 
   try {
     const session = res.locals.anonymousSession as AnonymousSession;
-    await recordAnalyticsEvent(event, session.installationId, properties);
+    await recordAnalyticsEvent(event, session.installationId, properties, clientEventTime(properties));
     res.status(204).end();
   } catch (error) {
     logger.warn('Événement Nevi Pulse client non enregistré', error);

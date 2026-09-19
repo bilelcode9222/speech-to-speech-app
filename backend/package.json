@@ -11,7 +11,8 @@
     "build": "tsc",
     "postbuild": "npm prune --omit=dev",
     "start": "node dist/server.js",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "node --test tests/*.test.cjs"
   },
   "license": "ISC",
   "dependencies": {
@@ -29,6 +30,7 @@
     "qs": "6.16.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.9.0",

@@ -45,6 +45,9 @@ async function ensureSchema(): Promise<any> {
     await db.query(
       'CREATE INDEX IF NOT EXISTS nevi_analytics_events_name_occurred_idx ON nevi_analytics_events (event_name, occurred_at DESC)'
     );
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS nevi_analytics_client_event_idx
+      ON nevi_analytics_events (installation_id, (properties->>'event_id'))
+      WHERE properties ? 'event_id'`);
   })().catch((error) => {
     schemaReady = null;
     logger.error('Initialisation de Nevi Pulse impossible', error);
@@ -68,7 +71,7 @@ export async function recordAnalyticsEvent(
   const db = await ensureSchema();
   await db.query(
     `INSERT INTO nevi_analytics_events (installation_id, event_name, properties, occurred_at)
-     VALUES ($1, $2, $3::jsonb, COALESCE($4::timestamptz, NOW()))`,
+     VALUES ($1, $2, $3::jsonb, COALESCE($4::timestamptz, NOW())) ON CONFLICT DO NOTHING`,
     [installationId, eventName, JSON.stringify(properties), occurredAt ?? null],
   );
 }
