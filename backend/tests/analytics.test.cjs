@@ -90,3 +90,8 @@ test('persisted event IDs are idempotent per installation and old clients still 
  await store.recordAnalyticsEvent('app_opened','one',{});await store.recordAnalyticsEvent('app_opened','one',{});
  assert.equal((await db.query('SELECT COUNT(*) AS n FROM nevi_analytics_events')).rows[0].n,4);
 });
+test('RevenueCat connection tests update source health without inventing users or sales',async()=>{
+ await db.exec('TRUNCATE nevi_analytics_events');
+ await add('test-webhook-user','revenuecat_test',{revenuecat_event_id:'test-connection',environment:'SANDBOX',revenue_usd:100});
+ const s=await analytics.loadAnalyticsSnapshot(30);assert.equal(s.customers.length,0);assert.equal(s.summary.users,0);assert.equal(s.summary.revenueUsd,0);assert.equal(s.recent.length,0);assert.ok(s.health.lastWebhookAt);
+});

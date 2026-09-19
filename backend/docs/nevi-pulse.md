@@ -43,3 +43,11 @@ journey isolation, privacy filtering, timestamps and idempotent ingestion.
 `node tests/preview.cjs` starts an explicitly labeled synthetic-data preview on
 127.0.0.1:4187. Code `demo-local` is for this local preview only. The production
 server never imports this preview or provides a demonstration login.
+
+## Production connection
+
+RevenueCat project `eb8f26ff`, webhook `whintgr4bba7b8321`, sends all event types
+for the Nevi AI App Store app to `/webhooks/revenuecat`. Sandbox deliveries stay
+out of revenue. Synthetic `TEST` deliveries appear only in source health, never
+as a customer or sale. The authorization value is held in Render environment
+configuration, not in this repository. Successful deliveries return HTTP 200.

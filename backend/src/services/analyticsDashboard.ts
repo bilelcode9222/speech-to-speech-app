@@ -14,7 +14,7 @@ const base = `WITH deduplicated AS (
  SELECT *, properties->>'environment'='PRODUCTION' AS production,
  CASE WHEN COALESCE(properties->>'revenue_usd','') ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (properties->>'revenue_usd')::numeric ELSE 0 END AS revenue,
  CASE WHEN COALESCE(properties->>'estimated_cost_usd','') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (properties->>'estimated_cost_usd')::numeric ELSE 0 END AS cost FROM deduplicated
-), current_events AS (SELECT * FROM events WHERE occurred_at>=NOW()-($1::int*INTERVAL '1 day'))`;
+), current_events AS (SELECT * FROM events WHERE occurred_at>=NOW()-($1::int*INTERVAL '1 day') AND event_name<>'revenuecat_test')`;
 const charged = `production AND event_name IN ('revenuecat_initial_purchase','revenuecat_renewal','revenuecat_non_renewing_purchase') AND COALESCE(properties->>'period_type','')<>'TRIAL'`;
 const trial = `production AND event_name='revenuecat_initial_purchase' AND properties->>'period_type'='TRIAL'`;
 const metrics = `COUNT(DISTINCT installation_id) FILTER(WHERE event_name NOT LIKE 'revenuecat_%') AS users,
