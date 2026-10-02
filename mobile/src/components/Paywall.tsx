@@ -292,18 +292,14 @@ export function Paywall({
     return `${product.priceString} ${copy.perWeek}`;
   };
 
-  const activateAfterVerifiedPurchase = async (): Promise<boolean> => {
-    const backendPremium = await waitForPremiumBackendSync();
-    if (!backendPremium) {
-      console.log(
-        '[RevenueCat] Achat présent sur l’appareil mais activation backend pas encore confirmée.',
-      );
-      return false;
-    }
-
+  const activateVerifiedPurchase = (): void => {
+    // L'entitlement actif sur l'appareil prouve déjà l'achat. On débloque
+    // Premium tout de suite et on laisse la synchronisation backend se faire
+    // en arrière-plan : le webhook RevenueCat est asynchrone et ne doit pas
+    // bloquer un déblocage déjà payé.
     onPremiumActivated?.();
     onClose();
-    return true;
+    void waitForPremiumBackendSync();
   };
 
   const handlePurchase = async () => {
@@ -333,10 +329,7 @@ export function Paywall({
         return;
       }
 
-      const activated = await activateAfterVerifiedPurchase();
-      if (!activated) {
-        Alert.alert(copy.restoreUnavailableTitle, copy.restoreFailedBody);
-      }
+      activateVerifiedPurchase();
     } catch (error: any) {
       if (!error?.userCancelled) {
         console.log('[RevenueCat] achat impossible', error);
@@ -366,12 +359,8 @@ export function Paywall({
         return;
       }
 
-      const activated = await activateAfterVerifiedPurchase();
-      if (activated) {
-        Alert.alert(copy.restoreSuccessTitle, copy.restoreSuccessBody);
-      } else {
-        Alert.alert(copy.restoreFailedTitle, copy.restoreFailedBody);
-      }
+      activateVerifiedPurchase();
+      Alert.alert(copy.restoreSuccessTitle, copy.restoreSuccessBody);
     } catch (error) {
       console.log('[RevenueCat] restauration impossible', error);
       Alert.alert(copy.restoreFailedTitle, copy.restoreFailedBody);
