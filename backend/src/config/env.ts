@@ -36,9 +36,9 @@ function nonNegativeNumberEnv(key: string, fallback: number): number {
 const provider = (process.env.AI_PROVIDER || 'openai') as 'openai' | 'gemini' | 'groq';
 
 // Le mode classique conserve ses fournisseurs et modèles pour un retour arrière.
-const translationMode = process.env.TRANSLATION_MODE?.trim() || 'realtime';
-if (translationMode !== 'realtime' && translationMode !== 'classic') {
-  throw new Error('TRANSLATION_MODE doit être realtime ou classic.');
+const translationMode = process.env.TRANSLATION_MODE?.trim() || 'gpt6';
+if (!['gpt6', 'realtime', 'classic'].includes(translationMode)) {
+  throw new Error('TRANSLATION_MODE doit être gpt6, realtime ou classic.');
 }
 
 const ttsProvider = (process.env.TTS_PROVIDER || 'openai') as
@@ -47,13 +47,19 @@ const ttsProvider = (process.env.TTS_PROVIDER || 'openai') as
   | 'device'
   | 'elevenlabs';
 
-const needsOpenAI = translationMode === 'realtime' || provider === 'openai' || ttsProvider === 'openai';
+const needsOpenAI = translationMode !== 'classic' || provider === 'openai' || ttsProvider === 'openai';
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
   provider,
   ttsProvider,
   translationMode,
+
+  gpt6Translation: {
+    model: 'gpt-6-sol',
+    transcriptionModel: 'gpt-4o-transcribe',
+    speechModel: 'gpt-4o-mini-tts',
+  },
 
   realtimeTranslation: {
     model: 'gpt-realtime-translate',

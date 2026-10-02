@@ -10,6 +10,7 @@ import { translateAudio, synthesizeSpeechGemini } from '../services/geminiServic
 import { config } from '../config/env';
 import { decodeRealtimeAudio } from '../services/realtimeAudio';
 import { translateRealtimePcm } from '../services/realtimeTranslationService';
+import { translateGPT6 } from '../services/gpt6TranslationService';
 import { logger } from '../utils/logger';
 import { canBeTarget, isSupported } from '../utils/languages';
 import { PipelineResult, StageError, TranslationRequest } from '../types';
@@ -32,6 +33,30 @@ export async function runSpeechPipeline(
 
   validate(request);
   hooks.signal?.throwIfAborted();
+
+  if (config.translationMode === 'gpt6') {
+    const signal = AbortSignal.any([AbortSignal.timeout(40_000), ...(hooks.signal ? [hooks.signal] : [])]);
+    // Même validation du fichier et du silence que pour Realtime.
+    await decodeRealtimeAudio(request.audioBase64, request.audioFormat, signal);
+    const stt = await transcribeOpenAI(request.audioBase64, request.audioFormat, request.sourceLanguage,
+      { model: config.gpt6Translation.transcriptionModel, signal });
+    signal.throwIfAborted();
+    hooks.onTranscription?.(stt.text);
+    const translation = await translateGPT6(stt.text, request.sourceLanguage, request.targetLanguage, signal);
+    signal.throwIfAborted();
+    hooks.onTranslation?.(translation.translatedText);
+    const speech = await synthesizeSpeechOpenAI(translation.translatedText,
+      { model: config.gpt6Translation.speechModel, signal });
+    signal.throwIfAborted();
+    const total = Date.now() - totalStart;
+    logger.success(`Pipeline ${request.requestId} (${config.gpt6Translation.model}) terminé en ${total}ms`);
+    return {
+      requestId: request.requestId, originalText: stt.text, translatedText: translation.translatedText,
+      audioBase64: speech.audioBase64, audioFormat: 'mp3',
+      timings: { stt: stt.durationMs, translation: translation.durationMs, tts: speech.durationMs, total },
+      usage: { translationInputTokens: translation.inputTokens, translationOutputTokens: translation.outputTokens },
+    };
+  }
 
   if (config.translationMode === 'realtime') {
     const pcm = await decodeRealtimeAudio(request.audioBase64, request.audioFormat, hooks.signal);

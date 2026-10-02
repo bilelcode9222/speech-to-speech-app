@@ -15,12 +15,13 @@ interface TranslationCostInput {
  * traduit ne sort du pipeline.
  */
 export async function recordTranslationCost(input: TranslationCostInput): Promise<void> {
-  if (config.translationMode === 'realtime') {
+  if (config.translationMode === 'realtime' || config.translationMode === 'gpt6') {
     // Cette API ne renvoie pas les compteurs du pipeline Whisper + GPT + TTS.
     // Ne pas afficher une marge artificielle en lui appliquant leurs tarifs.
     await captureServerAnalytics('translation_cost_recorded', input.installationId, {
       provider: 'openai', tts_provider: 'openai',
-      translation_mode: 'realtime', model: config.realtimeTranslation.model,
+      translation_mode: config.translationMode,
+      model: config.translationMode === 'gpt6' ? config.gpt6Translation.model : config.realtimeTranslation.model,
       estimated_cost_usd: null,
       cost_estimate_complete: false,
     });

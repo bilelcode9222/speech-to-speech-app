@@ -51,7 +51,8 @@ app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     translationMode: config.translationMode,
-    translationModel: config.translationMode === 'realtime' ? config.realtimeTranslation.model : undefined,
+    translationModel: config.translationMode === 'gpt6' ? config.gpt6Translation.model
+      : config.translationMode === 'realtime' ? config.realtimeTranslation.model : undefined,
     provider: config.provider,
     ttsProvider: config.ttsProvider,
     durableUsageStore: Boolean(config.databaseUrl),

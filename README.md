@@ -14,14 +14,31 @@ mobile/     Application React Native (Expo)
 
 ## Pipeline IA
 
-Le backend choisit les fournisseurs avec les variables `AI_PROVIDER` et `TTS_PROVIDER`.
-Les valeurs par défaut actuelles sont :
+Le backend utilise par défaut `TRANSLATION_MODE=gpt6` : transcription avec
+`gpt-4o-transcribe`, traduction avec `gpt-6-sol` via Responses (raisonnement
+`none`), puis voix avec `gpt-4o-mini-tts`. Ce mode accepte la détection automatique
+et les mots courts. Les réponses texte ne sont pas stockées chez OpenAI
+(`store: false`). La clé OpenAI reste uniquement sur le serveur.
 
-- Transcription : OpenAI Whisper (`whisper-1`)
-- Traduction : OpenAI (`gpt-4o-mini`)
-- Synthèse vocale : OpenAI (`tts-1`)
-- Alternatives disponibles : Groq, Gemini et ElevenLabs
-- Transport principal : Socket.IO / WebSocket
+Le changement est compatible avec l'app et TestFlight actuels, sans nouveau build.
+Les fichiers audio sont validés avec `ffmpeg-static` avant transcription ; les
+fichiers temporaires sont supprimés. Le parcours dispose d'un délai total de 40 s.
+
+Deux configurations précédentes restent disponibles par variable serveur :
+
+- `TRANSLATION_MODE=realtime` : `gpt-realtime-translate` produit traduction et voix ;
+  `gpt-realtime-whisper` fournit le texte source. Une réponse vide déclenche le
+  secours transcription, traduction et voix pour ne pas perdre les mots courts.
+- `TRANSLATION_MODE=classic` : conserve les variables `AI_PROVIDER`, `TTS_PROVIDER`
+  et `OPENAI_*` (par défaut Whisper-1, GPT-4o-mini et TTS-1).
+
+Installer les dépendances backend, déployer et redémarrer après un changement de
+mode. `/health` expose `translationMode` et `translationModel`. Sans variable
+explicite, le mode GPT-6 est choisi. Les coûts GPT-6 et Realtime sont signalés
+incomplets dans Pulse, plutôt que calculés avec les anciens tarifs.
+
+L'app conserve l'enregistrement puis la lecture de la traduction. Ce changement
+n'ajoute pas de capture micro continue.
 
 Gemini Live n'est pas exposé par le serveur de production V1 tant que le client mobile de production ne l'utilise pas.
 

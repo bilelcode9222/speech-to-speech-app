@@ -38,6 +38,7 @@ function config(mode = 'realtime') {
   return {
     translationMode: mode, provider: 'openai', ttsProvider: 'openai',
     openai: { apiKey: 'test-only' },
+    gpt6Translation: { model: 'gpt-6-sol', transcriptionModel: 'gpt-4o-transcribe', speechModel: 'gpt-4o-mini-tts' },
     realtimeTranslation: { model: 'gpt-realtime-translate', transcriptionModel: 'gpt-realtime-whisper', timeoutMs: 1000 },
   };
 }
@@ -166,7 +167,7 @@ test('real FFmpeg decodes M4A to 24kHz PCM, rejects corrupt input and removes te
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('pipeline defaults to direct translated voice; classic retains the previous three stages', async () => {
+test('Realtime produces direct translated voice; classic retains the previous three stages', async () => {
   const request = { requestId: 'test', audioBase64: 'AA==', audioFormat: 'm4a', sourceLanguage: 'fr', targetLanguage: 'en' };
   for (const mode of ['realtime', 'classic']) {
     const called = [];
@@ -187,11 +188,12 @@ test('pipeline defaults to direct translated voice; classic retains the previous
   }
 });
 
-test('mode configuration defaults to realtime, preserves legacy model settings and rejects typos', () => {
+test('mode configuration defaults to GPT-6, preserves legacy model settings and rejects typos', () => {
   function read(env) {
     return loader({ dotenv: { config() {} } }, { process: { env: { ANONYMOUS_SESSION_SECRET: 'test', OPENAI_API_KEY: 'test', ...env } } })('config/env.ts').config;
   }
-  assert.equal(read({}).translationMode, 'realtime');
+  assert.equal(read({}).translationMode, 'gpt6');
+  assert.equal(read({ TRANSLATION_MODE: 'realtime' }).translationMode, 'realtime');
   const legacy = read({ TRANSLATION_MODE: 'classic' });
   assert.equal(legacy.openai.sttModel, 'whisper-1');
   assert.equal(legacy.openai.llmModel, 'gpt-4o-mini');
@@ -290,5 +292,73 @@ test('empty Realtime results use the OpenAI fallback regardless of recording len
       const result = await promise; assert.equal(result.translatedText, 'Yes'); assert.equal(result.audioFormat, 'mp3');
       assert.deepEqual(called, ['stt', 'translation', 'voice']);
     } else { await assert.rejects(promise); assert.deepEqual(called, []); }
+  }
+});
+
+test('GPT-6 Responses translates untrusted text with no reasoning and parses only output text', async () => {
+  let captured;
+  const load = loader({
+    '../config/env': { config: config('gpt6') },
+    axios: { post: async (...args) => { captured = args; return { data: {
+      status: 'completed', output: [{ type: 'reasoning', content: [{ type: 'output_text', text: 'hidden' }] },
+        { type: 'message', content: [{ type: 'output_text', text: ' Yes. ' }] }],
+      usage: { input_tokens: 15, output_tokens: 2 },
+    } }; } },
+  });
+  const signal = new AbortController().signal;
+  const result = await load('services/gpt6TranslationService.ts').translateGPT6('Oui.', 'auto', 'en', signal);
+  assert.equal(result.translatedText, 'Yes.'); assert.equal(result.inputTokens, 15);
+  assert.equal(captured[0], 'https://api.openai.com/v1/responses');
+  assert.equal(captured[1].model, 'gpt-6-sol');
+  assert.equal(captured[1].reasoning.effort, 'none'); assert.equal(captured[1].store, false);
+  assert.equal(captured[1].input, 'Oui.'); assert.match(captured[1].instructions, /Détecte la langue/);
+  assert.equal(captured[2].signal, signal);
+});
+
+test('GPT-6 rejects incomplete, refused or empty responses and sanitizes provider errors', async () => {
+  for (const data of [{ status: 'incomplete', output: [{ type: 'message', content: [{ type: 'output_text', text: 'partial' }] }] },
+    { status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'no' }] }] },
+    { status: 'completed', output: [] }, null]) {
+    const api = loader({ '../config/env': { config: config('gpt6') }, axios: { post: async () => {
+      if (!data) throw new Error('secret provider detail'); return { data };
+    } } })('services/gpt6TranslationService.ts');
+    await assert.rejects(api.translateGPT6('Oui', 'auto', 'en'), error => error.stage === 'translation' && !error.message.includes('secret'));
+  }
+});
+
+test('GPT-6 pipeline bypasses Realtime, preserves automatic source and existing mobile events', async () => {
+  for (const cancel of [false, true]) {
+    const calls = []; const controller = new AbortController();
+    const load = loader({
+      '../config/env': { config: config('gpt6') }, '../utils/logger': { logger: quiet },
+      '../services/sttService': {}, '../services/translationService': {}, '../services/ttsService': {}, '../services/geminiService': {},
+      '../services/realtimeTranslationService': { translateRealtimePcm: () => assert.fail('Realtime must not run') },
+      '../services/realtimeAudio': { decodeRealtimeAudio: async () => calls.push('decode') },
+      '../services/gpt6TranslationService': { translateGPT6: async (text, source, target) => {
+        calls.push('gpt6'); assert.equal(text, 'Oui'); assert.equal(source, 'auto'); assert.equal(target, 'en');
+        return { translatedText: 'Yes', durationMs: 2, inputTokens: 5, outputTokens: 1 };
+      } },
+      '../services/openaiService': {
+        transcribeOpenAI: async (audio, format, source, options) => {
+          calls.push('stt'); assert.equal(source, 'auto'); assert.equal(options.model, 'gpt-4o-transcribe');
+          if (cancel) controller.abort(); return { text: 'Oui', durationMs: 1 };
+        },
+        synthesizeSpeechOpenAI: async (text, options) => {
+          calls.push('tts'); assert.equal(text, 'Yes'); assert.equal(options.model, 'gpt-4o-mini-tts');
+          return { audioBase64: 'mp3', durationMs: 3 };
+        },
+      },
+    });
+    const promise = load('pipeline/speechPipeline.ts').runSpeechPipeline({ requestId: 'word', audioBase64: 'AA==',
+      audioFormat: 'm4a', sourceLanguage: 'auto', targetLanguage: 'en' }, {
+      signal: controller.signal, onTranscription: () => calls.push('source-event'), onTranslation: () => calls.push('translation-event'),
+    });
+    if (cancel) { await assert.rejects(promise); assert.deepEqual(calls, ['decode', 'stt']); }
+    else {
+      const result = await promise;
+      assert.deepEqual(calls, ['decode', 'stt', 'source-event', 'gpt6', 'translation-event', 'tts']);
+      assert.equal(result.audioFormat, 'mp3'); assert.equal(result.originalText, 'Oui');
+      assert.equal(result.usage.translationInputTokens, 5);
+    }
   }
 });
