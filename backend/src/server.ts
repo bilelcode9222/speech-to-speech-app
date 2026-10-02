@@ -50,6 +50,8 @@ app.use(express.json({ limit: '12mb' }));
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
+    translationMode: config.translationMode,
+    translationModel: config.translationMode === 'realtime' ? config.realtimeTranslation.model : undefined,
     provider: config.provider,
     ttsProvider: config.ttsProvider,
     durableUsageStore: Boolean(config.databaseUrl),
@@ -191,6 +193,9 @@ app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) =
   const session = res.locals.anonymousSession as AnonymousSession;
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   let started = false;
+  const controller = new AbortController();
+  const abort = () => { if (!res.writableEnded) controller.abort(); };
+  res.once('close', abort);
 
   try {
     const installationLimit = consumeRateLimit(
@@ -218,7 +223,8 @@ app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) =
     }
     started = true;
 
-    const result = await runSpeechPipeline(req.body as TranslationRequest);
+    controller.signal.throwIfAborted();
+    const result = await runSpeechPipeline(req.body as TranslationRequest, { signal: controller.signal });
     await recordSuccessfulTranslation(session.installationId, access.premium);
     res.json(result);
     void recordTranslationCost({
@@ -231,6 +237,7 @@ app.post('/api/translate', requireAnonymousHttpSession, async (req, res, next) =
   } catch (error) {
     next(error instanceof StageError ? error : new Error(String(error)));
   } finally {
+    res.off('close', abort);
     if (started) finishTranslation(session.installationId);
   }
 });

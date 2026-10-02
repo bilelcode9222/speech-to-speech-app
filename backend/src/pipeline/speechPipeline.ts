@@ -8,11 +8,14 @@ import {
 } from '../services/openaiService';
 import { translateAudio, synthesizeSpeechGemini } from '../services/geminiService';
 import { config } from '../config/env';
+import { decodeRealtimeAudio, PCM_BYTES_PER_SECOND } from '../services/realtimeAudio';
+import { translateRealtimePcm } from '../services/realtimeTranslationService';
 import { logger } from '../utils/logger';
 import { canBeTarget, isSupported } from '../utils/languages';
 import { PipelineResult, StageError, TranslationRequest } from '../types';
 
 export interface PipelineHooks {
+  signal?: AbortSignal;
   onTranscription?: (text: string) => void;
   onTranslation?: (text: string) => void;
 }
@@ -28,6 +31,51 @@ export async function runSpeechPipeline(
   const totalStart = Date.now();
 
   validate(request);
+  hooks.signal?.throwIfAborted();
+
+  if (config.translationMode === 'realtime') {
+    const pcm = await decodeRealtimeAudio(request.audioBase64, request.audioFormat, hooks.signal);
+    let result;
+    try {
+      result = await translateRealtimePcm(pcm, request.targetLanguage, hooks.signal);
+    } catch (error) {
+      // Realtime peut ne rien produire sur un mot isolé. Un repli OpenAI
+      // ciblé le traduit sans modifier les réglages du mode classique.
+      if (!(error instanceof StageError) || error.code !== 'REALTIME_EMPTY_RESULT' ||
+          pcm.length > PCM_BYTES_PER_SECOND * 3) throw error;
+      hooks.signal?.throwIfAborted();
+      const remainingMs = Math.max(1, 40_000 - (Date.now() - totalStart));
+      const signal = AbortSignal.any([AbortSignal.timeout(remainingMs), ...(hooks.signal ? [hooks.signal] : [])]);
+      const stt = await transcribeOpenAI(request.audioBase64, request.audioFormat, request.sourceLanguage,
+        { model: 'gpt-4o-transcribe', signal });
+      signal.throwIfAborted();
+      hooks.onTranscription?.(stt.text);
+      const translation = await translateOpenAI(stt.text, request.sourceLanguage, request.targetLanguage, { signal });
+      signal.throwIfAborted();
+      hooks.onTranslation?.(translation.translatedText);
+      const speech = await synthesizeSpeechOpenAI(translation.translatedText, { model: 'gpt-4o-mini-tts', signal });
+      signal.throwIfAborted();
+      return {
+        requestId: request.requestId, originalText: stt.text, translatedText: translation.translatedText,
+        audioBase64: speech.audioBase64, audioFormat: 'mp3',
+        timings: { stt: stt.durationMs, translation: translation.durationMs, tts: speech.durationMs, total: Date.now() - totalStart },
+        usage: { translationInputTokens: translation.inputTokens, translationOutputTokens: translation.outputTokens },
+      };
+    }
+    hooks.onTranscription?.(result.originalText);
+    hooks.onTranslation?.(result.translatedText);
+    const total = Date.now() - totalStart;
+    logger.success(`Pipeline ${request.requestId} (${config.realtimeTranslation.model}) terminé en ${total}ms`);
+    return {
+      requestId: request.requestId,
+      ...result,
+      audioFormat: 'wav',
+      // La traduction et la voix sont produites ensemble ; ne pas inventer
+      // de durées STT/TTS séparées ni de compteurs Chat Completions.
+      timings: { stt: 0, translation: total, tts: 0, total },
+      usage: {},
+    };
+  }
 
   logger.info(
     `Pipeline ${request.requestId} : ${request.sourceLanguage} -> ${request.targetLanguage} ` +

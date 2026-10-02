@@ -67,6 +67,9 @@ export function registerTranslationSocket(io: Server): void {
       }
 
       let started = false;
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      socket.once('disconnect', abort);
       try {
         const access = await beginTranslation(installationId);
         if (!access.allowed) {
@@ -79,8 +82,10 @@ export function registerTranslationSocket(io: Server): void {
           return;
         }
         started = true;
+        controller.signal.throwIfAborted();
 
         const result = await runSpeechPipeline(payload, {
+          signal: controller.signal,
           onTranscription: (text) =>
             socket.emit(SOCKET_EVENTS.TRANSCRIPTION_READY, { requestId, text }),
           onTranslation: (text) =>
@@ -103,8 +108,10 @@ export function registerTranslationSocket(io: Server): void {
           requestId,
           stage,
           message: publicPipelineMessage(error),
+          ...(error instanceof StageError && error.code === 'NO_SPEECH' ? { code: error.code } : {}),
         });
       } finally {
+        socket.off('disconnect', abort);
         if (started) finishTranslation(installationId);
       }
     });

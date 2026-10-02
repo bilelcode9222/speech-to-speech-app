@@ -12,6 +12,7 @@ import {
 } from '../types';
 
 const BASE = 'https://api.openai.com/v1';
+interface OpenAIRequestOptions { model?: string; signal?: AbortSignal }
 
 /**
  * Transcription via Whisper chez OpenAI.
@@ -22,7 +23,8 @@ const BASE = 'https://api.openai.com/v1';
 export async function transcribeOpenAI(
   audioBase64: string,
   format: string,
-  language: string
+  language: string,
+  options: OpenAIRequestOptions = {},
 ): Promise<TranscriptionResult> {
   const started = Date.now();
 
@@ -34,7 +36,7 @@ export async function transcribeOpenAI(
 
     const form = new FormData();
     form.append('file', buffer, { filename: `audio.${format}`, contentType: mime(format) });
-    form.append('model', config.openai.sttModel);
+    form.append('model', options.model ?? config.openai.sttModel);
     // En mode auto, on n'envoie pas le paramètre : Whisper détecte alors
     // lui-même la langue. Utile quand on ignore ce que va dire l'autre.
     if (language !== 'auto') {
@@ -54,6 +56,7 @@ export async function transcribeOpenAI(
       },
       timeout: 45000,
       maxBodyLength: Infinity,
+      signal: options.signal,
     });
 
     const text = (response.data?.text || '').trim();
@@ -61,7 +64,7 @@ export async function transcribeOpenAI(
     logger.timing('OpenAI STT', durationMs);
 
     if (!text || isHallucination(text)) {
-      throw new StageError('stt', "Aucune parole détectée dans l'enregistrement.");
+      throw new StageError('stt', "Aucune parole détectée dans l'enregistrement.", 'NO_SPEECH');
     }
 
     return { text, durationMs };
@@ -82,7 +85,8 @@ export async function transcribeOpenAI(
 export async function translateOpenAI(
   text: string,
   sourceLanguage: string,
-  targetLanguage: string
+  targetLanguage: string,
+  options: OpenAIRequestOptions = {},
 ): Promise<TranslationResult> {
   const started = Date.now();
   const source = languageName(sourceLanguage);
@@ -92,15 +96,17 @@ export async function translateOpenAI(
     const response = await axios.post(
       `${BASE}/chat/completions`,
       {
-        model: config.openai.llmModel,
+        model: options.model ?? config.openai.llmModel,
         temperature: 0.2,
         max_tokens: 1024,
         messages: [
           {
             role: 'system',
             content:
-              `Tu es un traducteur professionnel. Traduis le message depuis ` +
-              `${source} vers ${target}.\n` +
+              `Tu es un traducteur professionnel. ` +
+              (sourceLanguage === 'auto'
+                ? `Détecte la langue du message puis traduis-le vers ${target}.\n`
+                : `Traduis le message depuis ${source} vers ${target}.\n`) +
               `Règles strictes :\n` +
               `- Réponds UNIQUEMENT avec la traduction.\n` +
               `- Aucun commentaire, aucune explication, aucun guillemet ajouté.\n` +
@@ -116,6 +122,7 @@ export async function translateOpenAI(
           'Content-Type': 'application/json',
         },
         timeout: 30000,
+        signal: options.signal,
       }
     );
 
@@ -144,14 +151,14 @@ export async function translateOpenAI(
  * Synthèse vocale.
  * tts-1 est le plus rapide : environ 0,5 s avant le premier octet.
  */
-export async function synthesizeSpeechOpenAI(text: string): Promise<SpeechResult> {
+export async function synthesizeSpeechOpenAI(text: string, options: OpenAIRequestOptions = {}): Promise<SpeechResult> {
   const started = Date.now();
 
   try {
     const response = await axios.post(
       `${BASE}/audio/speech`,
       {
-        model: config.openai.ttsModel,
+        model: options.model ?? config.openai.ttsModel,
         voice: config.openai.voice,
         input: text,
         response_format: 'mp3',
@@ -164,6 +171,7 @@ export async function synthesizeSpeechOpenAI(text: string): Promise<SpeechResult
         },
         responseType: 'arraybuffer',
         timeout: 30000,
+        signal: options.signal,
       }
     );
 

@@ -159,9 +159,17 @@ export async function beginTranslation(installationId: string): Promise<AccessDe
     };
   }
 
-  const access = await inspectAccess(installationId);
-  if (access.allowed) active.add(installationId);
-  return access;
+  // Réserver AVANT le premier await : deux requêtes simultanées ne doivent
+  // pas toutes deux passer pendant la vérification RevenueCat/Postgres.
+  active.add(installationId);
+  try {
+    const access = await inspectAccess(installationId);
+    if (!access.allowed) active.delete(installationId);
+    return access;
+  } catch (error) {
+    active.delete(installationId);
+    throw error;
+  }
 }
 
 export function finishTranslation(installationId: string): void {

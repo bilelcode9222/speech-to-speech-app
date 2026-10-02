@@ -15,6 +15,17 @@ interface TranslationCostInput {
  * traduit ne sort du pipeline.
  */
 export async function recordTranslationCost(input: TranslationCostInput): Promise<void> {
+  if (config.translationMode === 'realtime') {
+    // Cette API ne renvoie pas les compteurs du pipeline Whisper + GPT + TTS.
+    // Ne pas afficher une marge artificielle en lui appliquant leurs tarifs.
+    await captureServerAnalytics('translation_cost_recorded', input.installationId, {
+      provider: 'openai', tts_provider: 'openai',
+      translation_mode: 'realtime', model: config.realtimeTranslation.model,
+      estimated_cost_usd: null,
+      cost_estimate_complete: false,
+    });
+    return;
+  }
   const rates = config.unitEconomics;
   const audioMinutes = Math.max(0, input.recordingDurationMs ?? 0) / 60_000;
   const outputCharacters = input.translatedText.length;

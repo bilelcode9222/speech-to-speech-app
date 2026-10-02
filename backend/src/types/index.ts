@@ -36,7 +36,7 @@ export interface PipelineResult {
   originalText: string;
   translatedText: string;
   audioBase64: string;
-  /** Gemini renvoie du WAV, ElevenLabs du MP3 — le mobile doit le savoir */
+  /** Realtime/Gemini renvoient du WAV, le pipeline TTS classique du MP3. */
   audioFormat: 'wav' | 'mp3';
   timings: {
     stt: number;
@@ -68,7 +68,7 @@ export const SOCKET_EVENTS = {
 } as const;
 
 export class StageError extends Error {
-  constructor(public stage: PipelineStage, message: string) {
+  constructor(public stage: PipelineStage, message: string, public code?: string) {
     super(message);
     this.name = 'StageError';
   }

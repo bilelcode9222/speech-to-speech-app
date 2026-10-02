@@ -235,7 +235,8 @@ export function isHallucination(text: string): boolean {
   // On mesure donc le texte d'origine, une fois retirés les espaces et la
   // ponctuation, sans présumer de son écriture.
   const meaningful = text.replace(/[\s\p{P}\p{S}]/gu, '');
-  if (meaningful.length <= 2) return true;
+  // Un mot d'une ou deux lettres peut être valide : « no », « si », « はい ».
+  if (meaningful.length === 0) return true;
 
   return false;
 }

@@ -35,18 +35,32 @@ function nonNegativeNumberEnv(key: string, fallback: number): number {
 
 const provider = (process.env.AI_PROVIDER || 'openai') as 'openai' | 'gemini' | 'groq';
 
+// Le mode classique conserve ses fournisseurs et modèles pour un retour arrière.
+const translationMode = process.env.TRANSLATION_MODE?.trim() || 'realtime';
+if (translationMode !== 'realtime' && translationMode !== 'classic') {
+  throw new Error('TRANSLATION_MODE doit être realtime ou classic.');
+}
+
 const ttsProvider = (process.env.TTS_PROVIDER || 'openai') as
   | 'openai'
   | 'gemini'
   | 'device'
   | 'elevenlabs';
 
-const needsOpenAI = provider === 'openai' || ttsProvider === 'openai';
+const needsOpenAI = translationMode === 'realtime' || provider === 'openai' || ttsProvider === 'openai';
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
   provider,
   ttsProvider,
+  translationMode,
+
+  realtimeTranslation: {
+    model: 'gpt-realtime-translate',
+    transcriptionModel: 'gpt-realtime-whisper',
+    // La conversion dispose de 10 s ; le mobile abandonne après 45 s au total.
+    timeoutMs: 30_000,
+  },
 
   // Contact public affiché sur les pages Support/Privacy lorsqu'il est défini.
   supportEmail: optionalEnv('SUPPORT_EMAIL'),
