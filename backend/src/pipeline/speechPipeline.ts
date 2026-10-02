@@ -8,7 +8,7 @@ import {
 } from '../services/openaiService';
 import { translateAudio, synthesizeSpeechGemini } from '../services/geminiService';
 import { config } from '../config/env';
-import { decodeRealtimeAudio, PCM_BYTES_PER_SECOND } from '../services/realtimeAudio';
+import { decodeRealtimeAudio } from '../services/realtimeAudio';
 import { translateRealtimePcm } from '../services/realtimeTranslationService';
 import { logger } from '../utils/logger';
 import { canBeTarget, isSupported } from '../utils/languages';
@@ -39,10 +39,10 @@ export async function runSpeechPipeline(
     try {
       result = await translateRealtimePcm(pcm, request.targetLanguage, hooks.signal);
     } catch (error) {
-      // Realtime peut ne rien produire sur un mot isolé. Un repli OpenAI
-      // ciblé le traduit sans modifier les réglages du mode classique.
-      if (!(error instanceof StageError) || error.code !== 'REALTIME_EMPTY_RESULT' ||
-          pcm.length > PCM_BYTES_PER_SECOND * 3) throw error;
+      // Realtime peut ne rien produire, même si le fichier dure plus de 3 s
+      // (mot court suivi de silence, langue source identique à la cible…).
+      // Réessayer une réponse vide sans confondre durée du fichier et parole.
+      if (!(error instanceof StageError) || error.code !== 'REALTIME_EMPTY_RESULT') throw error;
       hooks.signal?.throwIfAborted();
       const remainingMs = Math.max(1, 40_000 - (Date.now() - totalStart));
       const signal = AbortSignal.any([AbortSignal.timeout(remainingMs), ...(hooks.signal ? [hooks.signal] : [])]);

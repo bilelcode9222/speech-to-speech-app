@@ -264,7 +264,7 @@ test('valid short words are not mistaken for hallucinations in the classic fallb
 });
 
 
-test('only an empty short Realtime result uses the OpenAI short-word fallback', async () => {
+test('empty Realtime results use the OpenAI fallback regardless of recording length', async () => {
   for (const scenario of ['short', 'long', 'provider', 'abort']) {
     const called = []; const controller = new AbortController(); let StageError;
     const load = loader({
@@ -286,7 +286,7 @@ test('only an empty short Realtime result uses the OpenAI short-word fallback', 
     });
     StageError = load('types/index.ts').StageError;
     const promise = load('pipeline/speechPipeline.ts').runSpeechPipeline({requestId: 'word', audioBase64: 'AA==', audioFormat: 'm4a', sourceLanguage: 'auto', targetLanguage: 'en'}, { signal: controller.signal });
-    if (scenario === 'short') {
+    if (scenario === 'short' || scenario === 'long') {
       const result = await promise; assert.equal(result.translatedText, 'Yes'); assert.equal(result.audioFormat, 'mp3');
       assert.deepEqual(called, ['stt', 'translation', 'voice']);
     } else { await assert.rejects(promise); assert.deepEqual(called, []); }
