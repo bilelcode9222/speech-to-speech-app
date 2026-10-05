@@ -33,11 +33,15 @@ export async function runSpeechPipeline(
 
   validate(request);
   hooks.signal?.throwIfAborted();
+  const inputSignal = config.translationMode === 'gpt6'
+    ? AbortSignal.any([AbortSignal.timeout(40_000), ...(hooks.signal ? [hooks.signal] : [])])
+    : hooks.signal;
+  // Reject silence/noise before any provider, event, voice or usage reward.
+  // All modes, including classic fallbacks, share the same speech check.
+  const pcm = await decodeRealtimeAudio(request.audioBase64, request.audioFormat, inputSignal);
 
   if (config.translationMode === 'gpt6') {
-    const signal = AbortSignal.any([AbortSignal.timeout(40_000), ...(hooks.signal ? [hooks.signal] : [])]);
-    // Même validation du fichier et du silence que pour Realtime.
-    await decodeRealtimeAudio(request.audioBase64, request.audioFormat, signal);
+    const signal = inputSignal!;
     const stt = await transcribeOpenAI(request.audioBase64, request.audioFormat, request.sourceLanguage,
       { model: config.gpt6Translation.transcriptionModel, signal });
     signal.throwIfAborted();
@@ -59,7 +63,6 @@ export async function runSpeechPipeline(
   }
 
   if (config.translationMode === 'realtime') {
-    const pcm = await decodeRealtimeAudio(request.audioBase64, request.audioFormat, hooks.signal);
     let result;
     try {
       result = await translateRealtimePcm(pcm, request.targetLanguage, hooks.signal);

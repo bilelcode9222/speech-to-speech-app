@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ffmpegPath from 'ffmpeg-static';
 import { StageError } from '../types';
+import { assertSpeechAudio, SPEECH_SAMPLE_RATE } from './speechDetection';
 
 export const REALTIME_SAMPLE_RATE = 24_000;
 export const PCM_BYTES_PER_SECOND = REALTIME_SAMPLE_RATE * 2;
@@ -29,6 +30,7 @@ export async function decodeRealtimeAudio(audioBase64: string, format: string, s
   const directory = await mkdtemp(path.join(tmpdir(), 'nevi-audio-'));
   try {
     const input = path.join(directory, 'input');
+    const speechInput = path.join(directory, 'speech.pcm');
     await writeFile(input, source, { mode: 0o600, signal });
     const pcm = await new Promise<Buffer>((resolve, reject) => {
       execFile(executable, [
@@ -40,6 +42,11 @@ export async function decodeRealtimeAudio(audioBase64: string, format: string, s
         '-t', String(MAX_SOURCE_SECONDS + 1),
         '-ac', '1', '-ar', String(REALTIME_SAMPLE_RATE),
         '-c:a', 'pcm_s16le', '-f', 's16le', 'pipe:1',
+        // A second bounded output uses FFmpeg's resampler for the voice detector.
+        '-map', '0:a:0', '-vn', '-sn', '-dn',
+        '-t', String(MAX_SOURCE_SECONDS + 1),
+        '-ac', '1', '-ar', String(SPEECH_SAMPLE_RATE),
+        '-c:a', 'pcm_s16le', '-f', 's16le', speechInput,
       ], {
         encoding: 'buffer', timeout: 10_000,
         maxBuffer: PCM_BYTES_PER_SECOND * (MAX_SOURCE_SECONDS + 2),
@@ -54,6 +61,7 @@ export async function decodeRealtimeAudio(audioBase64: string, format: string, s
       throw new StageError('stt', 'Enregistrement trop long (60 secondes maximum).');
     }
     assertAudibleAudio(pcm);
+    await assertSpeechAudio(await readFile(speechInput, { signal }), signal);
     return pcm;
   } finally {
     await rm(directory, { recursive: true, force: true });

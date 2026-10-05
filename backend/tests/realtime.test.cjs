@@ -20,7 +20,7 @@ function loader(mocks = {}, globals = {}) {
     }).outputText;
     vm.runInNewContext(source, {
       module: mod, exports: mod.exports, Buffer, console, setTimeout, clearTimeout,
-      AbortController, AbortSignal, __dirname: path.dirname(absolute), process,
+      AbortController, AbortSignal, Float32Array, BigInt64Array, __dirname: path.dirname(absolute), process,
       require(id) {
         if (id in mocks) return mocks[id];
         if (!id.startsWith('.')) return require(id);
@@ -151,11 +151,11 @@ test('real FFmpeg decodes M4A to 24kHz PCM, rejects corrupt input and removes te
   try {
     const file = path.join(directory, 'source.m4a');
     execFileSync(require('ffmpeg-static'), [
-      '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100',
-      '-t', '0.5', '-ac', '2', '-c:a', 'aac', file,
+      '-hide_banner', '-loglevel', 'error', '-i', path.join(__dirname, 'fixtures/short-oui.wav'),
+      '-ar', '44100', '-ac', '2', '-c:a', 'aac', file,
     ]);
     const pcm = await api.decodeRealtimeAudio((await readFile(file)).toString('base64'), 'm4a');
-    assert.ok(pcm.length >= 24_000 && pcm.length < 27_000);
+    assert.ok(pcm.length >= 10_000 && pcm.length < 24_000);
     assert.equal(pcm.length % 2, 0);
     const wav = api.pcmToWav(pcm);
     assert.equal(wav.readUInt32LE(40), pcm.length);
@@ -183,7 +183,7 @@ test('Realtime produces direct translated voice; classic retains the previous th
       '../services/realtimeTranslationService': { translateRealtimePcm: async () => { called.push('realtime'); return { originalText: 'bonjour', translatedText: 'hello', audioBase64: 'realtime-wav' }; } },
     });
     const result = await load('pipeline/speechPipeline.ts').runSpeechPipeline(request);
-    assert.deepEqual(called, mode === 'realtime' ? ['decode', 'realtime'] : ['stt', 'llm', 'tts']);
+    assert.deepEqual(called, mode === 'realtime' ? ['decode', 'realtime'] : ['decode', 'stt', 'llm', 'tts']);
     assert.equal(result.audioFormat, mode === 'realtime' ? 'wav' : 'mp3');
   }
 });
@@ -361,4 +361,73 @@ test('GPT-6 pipeline bypasses Realtime, preserves automatic source and existing 
       assert.equal(result.usage.translationInputTokens, 5);
     }
   }
+});
+
+test('real voice detection rejects background noise, tones and clicks; short and quiet speech still passes', async () => {
+  const load = loader();
+  const { decodeRealtimeAudio, pcmToWav } = load('services/realtimeAudio.ts');
+  const ffmpeg = require('ffmpeg-static');
+  const noises = ['white', 'pink', 'brown'].map(color => execFileSync(ffmpeg, [
+    '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `anoisesrc=d=2:c=${color}:a=0.03:r=24000:s=42`,
+    '-f', 'wav', 'pipe:1',
+  ]));
+  noises.push(execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
+    'sine=frequency=440:sample_rate=24000:duration=2', '-f', 'wav', 'pipe:1']));
+  const clicks = Buffer.alloc(48000 * 2);
+  for (let i = 0; i < clicks.length; i += 12000) clicks.writeInt16LE(20000, i);
+  const dc = Buffer.alloc(48000); for (let i = 0; i < dc.length; i += 2) dc.writeInt16LE(1500, i);
+  noises.push(pcmToWav(clicks), pcmToWav(dc), pcmToWav(Buffer.alloc(48000)));
+  for (const noise of noises) await assert.rejects(decodeRealtimeAudio(noise.toString('base64'), 'wav'), e => e.code === 'NO_SPEECH');
+  for (const fixture of ['short-oui.wav', 'spanish-sentence.wav']) {
+    for (const volume of ['1', '0.08']) {
+      const audio = execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', path.join(__dirname, 'fixtures', fixture),
+        '-af', `volume=${volume},apad=pad_dur=1`, '-f', 'wav', 'pipe:1']);
+      assert.ok((await decodeRealtimeAudio(audio.toString('base64'), 'wav')).length > 0, `${fixture} volume ${volume}`);
+    }
+  }
+});
+
+test('noise never reaches a translation provider or success event, regardless of language and mode', async () => {
+  const noise = execFileSync(require('ffmpeg-static'), ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
+    'anoisesrc=d=2:c=white:a=0.02:r=24000:s=42', '-f', 'wav', 'pipe:1']).toString('base64');
+  for (const mode of ['gpt6', 'realtime', 'classic']) {
+    const unexpected = () => assert.fail('Noise must be rejected before any provider or success event');
+    const load = loader({
+      '../config/env': { config: config(mode) }, '../utils/logger': { logger: quiet },
+      '../services/sttService': { transcribeAudio: unexpected }, '../services/translationService': { translateText: unexpected },
+      '../services/ttsService': { synthesizeSpeech: unexpected }, '../services/geminiService': { translateAudio: unexpected },
+      '../services/openaiService': { transcribeOpenAI: unexpected, translateOpenAI: unexpected, synthesizeSpeechOpenAI: unexpected },
+      '../services/realtimeTranslationService': { translateRealtimePcm: unexpected },
+      '../services/gpt6TranslationService': { translateGPT6: unexpected },
+    });
+    for (const [sourceLanguage, targetLanguage] of [['auto', 'es'], ['es', 'fr'], ['auto', 'ja'], ['ja', 'en']]) {
+      await assert.rejects(load('pipeline/speechPipeline.ts').runSpeechPipeline({ requestId: 'silent', audioFormat: 'wav',
+        audioBase64: noise, sourceLanguage, targetLanguage }, { onTranscription: unexpected, onTranslation: unexpected }),
+      e => e.code === 'NO_SPEECH');
+    }
+  }
+});
+
+test('voice detector state is isolated between recordings and concurrent users; cancellation does not poison the model', async () => {
+  const ffmpeg = require('ffmpeg-static');
+  const voice = execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', path.join(__dirname, 'fixtures/short-oui.wav'),
+    '-ar', '16000', '-ac', '1', '-f', 's16le', 'pipe:1']);
+  const noise = execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
+    'anoisesrc=d=2:c=pink:a=0.02:r=16000:s=42', '-f', 's16le', 'pipe:1']);
+  const { assertSpeechAudio } = loader()('services/speechDetection.ts');
+  await Promise.all([assertSpeechAudio(voice), assert.rejects(assertSpeechAudio(noise), e => e.code === 'NO_SPEECH'), assertSpeechAudio(voice)]);
+  await assert.rejects(assertSpeechAudio(noise), e => e.code === 'NO_SPEECH');
+  const controller = new AbortController();
+  const pending = assertSpeechAudio(noise, controller.signal); controller.abort();
+  await assert.rejects(pending, e => e.name === 'AbortError');
+  await assertSpeechAudio(voice);
+});
+
+test('voice detector unavailability fails closed instead of sending noise to the transcription model', async () => {
+  const actual = require('onnxruntime-node'); let attempts = 0;
+  const { assertSpeechAudio } = loader({ 'onnxruntime-node': { ...actual, InferenceSession: {
+    create: async () => { attempts++; throw new Error('private model path'); },
+  } } })('services/speechDetection.ts');
+  for (let i = 0; i < 2; i++) await assert.rejects(assertSpeechAudio(Buffer.alloc(32000)), e => e.stage === 'stt' && !e.message.includes('private'));
+  assert.equal(attempts, 2, 'a failed initialization must allow a later retry');
 });
