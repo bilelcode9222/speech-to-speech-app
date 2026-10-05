@@ -23,6 +23,14 @@ function getModel(): Promise<InferenceSession> {
 export async function assertSpeechAudio(pcm16: Buffer, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
   try {
+    // Very short, quiet words can otherwise stay below the model's probability
+    // threshold. Normalize only its analysis copy, without changing STT audio or
+    // lowering the speech threshold. Bound gain and never amplify digital silence.
+    let peak = 0;
+    for (let offset = 0; offset + 1 < pcm16.length; offset += 2) {
+      peak = Math.max(peak, Math.abs(pcm16.readInt16LE(offset)) / 32768);
+    }
+    const gain = peak > 0 ? Math.min(16, Math.max(1, 0.2 / peak)) : 1;
     const session = await getModel();
     signal?.throwIfAborted();
     let state: Tensor = new Tensor('float32', new Float32Array(256), [2, 1, 128]);
@@ -34,7 +42,7 @@ export async function assertSpeechAudio(pcm16: Buffer, signal?: AbortSignal): Pr
       const count = Math.min(FRAME_SAMPLES, Math.floor((pcm16.length - offset) / 2));
       const samples = new Float32Array(CONTEXT_SAMPLES + FRAME_SAMPLES);
       samples.set(context);
-      for (let i = 0; i < count; i++) samples[CONTEXT_SAMPLES + i] = pcm16.readInt16LE(offset + i * 2) / 32768;
+      for (let i = 0; i < count; i++) samples[CONTEXT_SAMPLES + i] = pcm16.readInt16LE(offset + i * 2) / 32768 * gain;
       const result = await session.run({ input: new Tensor('float32', samples, [1, samples.length]), state, sr });
       signal?.throwIfAborted();
       const probability = Number(result.output.data[0]);

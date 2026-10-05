@@ -378,11 +378,13 @@ test('real voice detection rejects background noise, tones and clicks; short and
   const dc = Buffer.alloc(48000); for (let i = 0; i < dc.length; i += 2) dc.writeInt16LE(1500, i);
   noises.push(pcmToWav(clicks), pcmToWav(dc), pcmToWav(Buffer.alloc(48000)));
   for (const noise of noises) await assert.rejects(decodeRealtimeAudio(noise.toString('base64'), 'wav'), e => e.code === 'NO_SPEECH');
-  for (const fixture of ['short-oui.wav', 'spanish-sentence.wav']) {
+  for (const fixture of ['short-oui.wav', 'short-hai.wav', 'spanish-sentence.wav']) {
     for (const volume of ['1', '0.08']) {
-      const audio = execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', path.join(__dirname, 'fixtures', fixture),
-        '-af', `volume=${volume},apad=pad_dur=1`, '-f', 'wav', 'pipe:1']);
-      assert.ok((await decodeRealtimeAudio(audio.toString('base64'), 'wav')).length > 0, `${fixture} volume ${volume}`);
+      for (const padding of ['', ',apad=pad_dur=1']) {
+        const audio = execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', path.join(__dirname, 'fixtures', fixture),
+          '-af', `volume=${volume}${padding}`, '-f', 'wav', 'pipe:1']);
+        assert.ok((await decodeRealtimeAudio(audio.toString('base64'), 'wav')).length > 0, `${fixture} volume ${volume} padding ${padding}`);
+      }
     }
   }
 });
