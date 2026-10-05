@@ -15,6 +15,7 @@ import Purchases, {
   PurchasesStoreProduct,
 } from 'react-native-purchases';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePostHog } from 'posthog-react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette } from '../theme/tokens';
 import {
@@ -139,6 +140,7 @@ export function Paywall({
 }: Props) {
   const { locale } = useTranslation();
   const copy = useMemo(() => getPaywallCopy(locale), [locale]);
+  const posthog = usePostHog();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
@@ -241,6 +243,12 @@ export function Paywall({
   useEffect(() => {
     if (visible) void loadProducts();
   }, [visible, loadProducts]);
+
+  // La paywall est une modale plein écran : on envoie la vue à la main
+  // quand elle s'ouvre.
+  useEffect(() => {
+    if (visible) posthog.screen('Paywall');
+  }, [visible, posthog]);
 
   const plans = useMemo<Plan[]>(() => {
     const getPackage = (key: PlanKey) =>
