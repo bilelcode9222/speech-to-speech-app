@@ -6,7 +6,8 @@
     "start": "expo start",
     "ios": "expo run:ios",
     "android": "expo run:android",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@formatjs/intl-displaynames": "^7.3.13",

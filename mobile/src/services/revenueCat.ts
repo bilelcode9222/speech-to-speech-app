@@ -83,12 +83,21 @@ export async function syncPremiumWithBackend(): Promise<boolean> {
     console.log('[RevenueCat] lecture entitlement locale impossible', error);
   }
 
+  // A delayed server response must not revoke a verified SDK entitlement.
+  if (localPremium) {
+    void refreshAccessStatus().catch((error) => {
+      console.log('[RevenueCat] synchronisation backend impossible', error);
+    });
+    return true;
+  }
+
   try {
     const access = await refreshAccessStatus();
-    return access.premium;
+    // An entitlement may have arrived while this request was in flight.
+    return access.premium || await hasPremiumEntitlement();
   } catch (error) {
     console.log('[RevenueCat] synchronisation backend impossible', error);
-    return localPremium;
+    return hasPremiumEntitlement().catch(() => localPremium);
   }
 }
 
@@ -145,16 +154,29 @@ export async function isTrialEligible(productIdentifier: string): Promise<boolea
 export function subscribePremiumStatus(
   listener: (premium: boolean) => void,
 ): () => void {
+  let revision = 0;
+  let disposed = false;
   const onCustomerInfo = (customerInfo: CustomerInfo) => {
+    if (disposed) return;
+    const currentRevision = ++revision;
     const localPremium = customerInfoIsPremium(customerInfo);
+    // Notify before any network await, including after a purchase or restore.
+    listener(localPremium);
 
     void refreshAccessStatus()
-      .then((access) => listener(access.premium))
-      .catch(() => listener(localPremium));
+      .then((access) => {
+        if (!disposed && revision === currentRevision) {
+          listener(localPremium || access.premium);
+        }
+      })
+      .catch(() => {
+        // The SDK status was already delivered; keep it on network failure.
+      });
   };
 
   Purchases.addCustomerInfoUpdateListener(onCustomerInfo);
   return () => {
+    disposed = true;
     Purchases.removeCustomerInfoUpdateListener(onCustomerInfo);
   };
 }
