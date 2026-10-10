@@ -18,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '../theme/ThemeProvider';
 import { Palette } from '../theme/tokens';
 import {
-  PREMIUM_ENTITLEMENT_ID,
+  customerInfoIsPremium,
   configureRevenueCat,
   isTrialEligible,
   waitForPremiumBackendSync,
@@ -292,18 +292,14 @@ export function Paywall({
     return `${product.priceString} ${copy.perWeek}`;
   };
 
-  const activateAfterVerifiedPurchase = async (): Promise<boolean> => {
-    const backendPremium = await waitForPremiumBackendSync();
-    if (!backendPremium) {
-      console.log(
-        '[RevenueCat] Achat présent sur l’appareil mais activation backend pas encore confirmée.',
-      );
-      return false;
-    }
-
+  const activateVerifiedPurchase = (): void => {
+    // RevenueCat has verified the device entitlement. Server reconciliation
+    // must not delay the UI; server requests still enforce their own access.
     onPremiumActivated?.();
     onClose();
-    return true;
+    void waitForPremiumBackendSync().catch((error) => {
+      console.log('[RevenueCat] synchronisation post-achat indisponible', error);
+    });
   };
 
   const handlePurchase = async () => {
@@ -325,18 +321,14 @@ export function Paywall({
         ? await Purchases.purchasePackage(selectedPlan.package)
         : await Purchases.purchaseStoreProduct(selectedPlan.product);
 
-      const localPremium =
-        customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined;
+      const localPremium = customerInfoIsPremium(customerInfo);
 
       if (!localPremium) {
         Alert.alert(copy.purchaseFailedTitle, copy.purchaseFailedBody);
         return;
       }
 
-      const activated = await activateAfterVerifiedPurchase();
-      if (!activated) {
-        Alert.alert(copy.restoreUnavailableTitle, copy.restoreFailedBody);
-      }
+      activateVerifiedPurchase();
     } catch (error: any) {
       if (!error?.userCancelled) {
         console.log('[RevenueCat] achat impossible', error);
@@ -358,20 +350,15 @@ export function Paywall({
     setLoading(true);
     try {
       const customerInfo = await Purchases.restorePurchases();
-      const localPremium =
-        customerInfo.entitlements.active[PREMIUM_ENTITLEMENT_ID] !== undefined;
+      const localPremium = customerInfoIsPremium(customerInfo);
 
       if (!localPremium) {
         Alert.alert(copy.noSubscriptionTitle, copy.noSubscriptionBody);
         return;
       }
 
-      const activated = await activateAfterVerifiedPurchase();
-      if (activated) {
-        Alert.alert(copy.restoreSuccessTitle, copy.restoreSuccessBody);
-      } else {
-        Alert.alert(copy.restoreFailedTitle, copy.restoreFailedBody);
-      }
+      activateVerifiedPurchase();
+      Alert.alert(copy.restoreSuccessTitle, copy.restoreSuccessBody);
     } catch (error) {
       console.log('[RevenueCat] restauration impossible', error);
       Alert.alert(copy.restoreFailedTitle, copy.restoreFailedBody);
