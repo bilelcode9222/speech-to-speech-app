@@ -49,8 +49,8 @@ export async function runSpeechPipeline(
     const translation = await translateGPT6(stt.text, request.sourceLanguage, request.targetLanguage, signal);
     signal.throwIfAborted();
     hooks.onTranslation?.(translation.translatedText);
-    const speech = await synthesizeSpeechOpenAI(translation.translatedText,
-      { model: config.gpt6Translation.speechModel, signal });
+    const speech = await produceOpenAISpeechOrDevice(translation.translatedText,
+      config.gpt6Translation.speechModel, signal, request.requestId, totalStart);
     signal.throwIfAborted();
     const total = Date.now() - totalStart;
     logger.success(`Pipeline ${request.requestId} (${config.gpt6Translation.model}) terminé en ${total}ms`);
@@ -81,7 +81,8 @@ export async function runSpeechPipeline(
       const translation = await translateOpenAI(stt.text, request.sourceLanguage, request.targetLanguage, { signal });
       signal.throwIfAborted();
       hooks.onTranslation?.(translation.translatedText);
-      const speech = await synthesizeSpeechOpenAI(translation.translatedText, { model: 'gpt-4o-mini-tts', signal });
+      const speech = await produceOpenAISpeechOrDevice(translation.translatedText,
+        'gpt-4o-mini-tts', signal, request.requestId, totalStart);
       signal.throwIfAborted();
       return {
         requestId: request.requestId, originalText: stt.text, translatedText: translation.translatedText,
@@ -186,6 +187,39 @@ export async function runSpeechPipeline(
     timings: { stt: sttMs, translation: translationMs, tts: speech.durationMs, total },
     usage: { translationInputTokens, translationOutputTokens },
   };
+}
+
+/** The released mobile app reads translatedText aloud when audioBase64 is empty.
+ * Bound only cloud voice generation; cancellation and upstream failures still fail.
+ */
+async function produceOpenAISpeechOrDevice(
+  text: string,
+  model: string,
+  signal: AbortSignal,
+  requestId: string,
+  totalStart: number,
+): Promise<{ audioBase64: string; durationMs: number }> {
+  signal.throwIfAborted();
+  const started = Date.now();
+  // Leave time to deliver the fallback before the 40 s pipeline deadline.
+  const budgetMs = Math.min(8_000, Math.max(0, 38_000 - (started - totalStart)));
+  let reason = 'deadline';
+  if (budgetMs > 0) {
+    const voiceSignal = AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]);
+    try {
+      const speech = await synthesizeSpeechOpenAI(text, { model, signal: voiceSignal });
+      voiceSignal.throwIfAborted();
+      if (speech.audioBase64) return speech;
+      reason = 'empty_audio';
+    } catch {
+      // Never turn a disconnect or the overall deadline into a successful request.
+      signal.throwIfAborted();
+      reason = voiceSignal.aborted ? 'timeout' : 'provider_error';
+    }
+  }
+  const durationMs = Date.now() - started;
+  logger.warn(`Pipeline ${requestId} : voix du téléphone (${reason}, ${durationMs}ms)`);
+  return { audioBase64: '', durationMs };
 }
 
 async function produceSpeech(

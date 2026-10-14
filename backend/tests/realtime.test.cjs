@@ -63,6 +63,96 @@ function session({ timeout = 1000 } = {}) {
 }
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+for (const mode of ['gpt6', 'realtime']) {
+  for (const outcome of ['success', 'provider_error', 'empty_audio', 'timeout', 'disconnect', 'pipeline_deadline', 'short_budget', 'no_budget', 'translation_error']) {
+    test(`${mode} voice fallback: ${outcome} preserves text and respects cancellation`, async () => {
+      let now = 1000;
+      class Clock extends Date { static now() { return now; } }
+      const deadlines = [];
+      const controller = new AbortController();
+      const warnings = [];
+      const events = [];
+      let voiceSignal;
+      let voiceCalls = 0;
+      const load = loader({
+        '../config/env': { config: config(mode) },
+        '../utils/logger': { logger: { ...quiet, warn: message => warnings.push(message) } },
+        '../services/sttService': {}, '../services/translationService': {}, '../services/ttsService': {},
+        '../services/geminiService': {},
+        '../services/realtimeAudio': { decodeRealtimeAudio: async () => Buffer.alloc(2) },
+        '../services/realtimeTranslationService': { translateRealtimePcm: async () => {
+          const { StageError } = load('types/index.ts');
+          throw new StageError('translation', 'empty', 'REALTIME_EMPTY_RESULT');
+        } },
+        '../services/gpt6TranslationService': { translateGPT6: translate },
+        '../services/openaiService': {
+          transcribeOpenAI: async () => ({ text: 'Bonjour', durationMs: 1 }),
+          translateOpenAI: translate,
+          synthesizeSpeechOpenAI: async (text, options) => {
+            voiceCalls++;
+            assert.equal(text, 'Hello');
+            assert.equal(options.model, 'gpt-4o-mini-tts');
+            voiceSignal = options.signal;
+            if (outcome === 'provider_error') throw new Error('private provider detail');
+            if (outcome === 'empty_audio') return { audioBase64: '', durationMs: 0 };
+            if (['timeout', 'disconnect', 'pipeline_deadline', 'short_budget'].includes(outcome)) {
+              return new Promise((resolve, reject) => {
+                voiceSignal.addEventListener('abort', () => reject(voiceSignal.reason), { once: true });
+              });
+            }
+            return { audioBase64: 'cloud-mp3', durationMs: 3 };
+          },
+        },
+      }, {
+        Date: Clock,
+        AbortSignal: { any: signals => AbortSignal.any(signals), timeout: ms => {
+          const timer = new AbortController(); deadlines.push({ ms, timer }); return timer.signal;
+        } },
+      });
+      async function translate() {
+        if (outcome === 'translation_error') throw new Error('translation unavailable');
+        if (outcome === 'short_budget') now += 37_000;
+        if (outcome === 'no_budget') now += 38_000;
+        return { translatedText: 'Hello', durationMs: 2, inputTokens: 4, outputTokens: 1 };
+      }
+      const pending = load('pipeline/speechPipeline.ts').runSpeechPipeline({
+        requestId: 'voice-test', audioBase64: 'AA==', audioFormat: 'm4a', sourceLanguage: 'fr', targetLanguage: 'en',
+      }, { signal: controller.signal, onTranscription: text => events.push(text), onTranslation: text => events.push(text) });
+      // Attach rejection handling before aborting the pending provider request.
+      const resultPromise = pending.then(result => ({ result }), error => ({ error }));
+      await tick();
+      if (outcome === 'disconnect') controller.abort();
+      if (outcome === 'pipeline_deadline') deadlines[0].timer.abort();
+      if (outcome === 'timeout' || outcome === 'short_budget') {
+        const deadline = deadlines.at(-1);
+        assert.equal(deadline.ms, outcome === 'short_budget' ? 1000 : 8000);
+        now += deadline.ms;
+        deadline.timer.abort();
+      }
+      const { result, error } = await resultPromise;
+      if (['disconnect', 'pipeline_deadline', 'translation_error'].includes(outcome)) {
+        assert.ok(error); assert.equal(result, undefined); assert.equal(warnings.length, 0);
+        if (outcome === 'translation_error') assert.equal(voiceCalls, 0);
+        else assert.equal(voiceSignal.aborted, true);
+        return;
+      }
+      assert.equal(error, undefined);
+      assert.deepEqual(events, ['Bonjour', 'Hello']);
+      assert.equal(result.originalText, 'Bonjour'); assert.equal(result.translatedText, 'Hello');
+      assert.equal(result.audioFormat, 'mp3'); assert.equal(result.usage.translationInputTokens, 4);
+      assert.equal(result.audioBase64, outcome === 'success' ? 'cloud-mp3' : '');
+      assert.equal(warnings.length, outcome === 'success' ? 0 : 1);
+      if (warnings.length) assert.doesNotMatch(warnings[0], /private|Bonjour|Hello/);
+      if (outcome === 'no_budget') assert.equal(voiceCalls, 0);
+      if (outcome === 'timeout') {
+        assert.equal(voiceSignal.aborted, true);
+        assert.equal(result.timings.tts, 8000);
+      }
+    });
+  }
+}
+
 async function ready(socket, language = 'en') {
   socket.emit('open');
   await tick();
