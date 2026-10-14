@@ -57,7 +57,7 @@ export async function runSpeechPipeline(
     logger.success(`Pipeline ${request.requestId} (${config.gpt6Translation.model}) terminé en ${total}ms`);
     return {
       requestId: request.requestId, originalText: stt.text, translatedText: translation.translatedText,
-      audioBase64: speech.audioBase64, audioFormat: 'mp3',
+      audioBase64: speech.audioBase64, audioFormat: speech.format ?? 'mp3',
       timings: { stt: stt.durationMs, translation: translation.durationMs, tts: speech.durationMs, total },
       usage: { translationInputTokens: translation.inputTokens, translationOutputTokens: translation.outputTokens },
     };
@@ -76,18 +76,18 @@ export async function runSpeechPipeline(
       const remainingMs = Math.max(1, 40_000 - (Date.now() - totalStart));
       const signal = AbortSignal.any([AbortSignal.timeout(remainingMs), ...(hooks.signal ? [hooks.signal] : [])]);
       const stt = await transcribeOpenAI(request.audioBase64, request.audioFormat, request.sourceLanguage,
-        { model: 'gpt-4o-transcribe', signal });
+        { model: config.gpt6Translation.transcriptionModel, signal });
       signal.throwIfAborted();
       hooks.onTranscription?.(stt.text);
-      const translation = await translateOpenAI(stt.text, request.sourceLanguage, request.targetLanguage, { signal });
+      const translation = await translateGPT6(stt.text, request.sourceLanguage, request.targetLanguage, signal);
       signal.throwIfAborted();
       hooks.onTranslation?.(translation.translatedText);
       const speech = await produceOpenAISpeechOrDevice(translation.translatedText,
-        'gpt-4o-mini-tts', signal, request.requestId, totalStart);
+        config.gpt6Translation.speechModel, signal, request.requestId, totalStart);
       signal.throwIfAborted();
       return {
         requestId: request.requestId, originalText: stt.text, translatedText: translation.translatedText,
-        audioBase64: speech.audioBase64, audioFormat: 'mp3',
+        audioBase64: speech.audioBase64, audioFormat: speech.format ?? 'mp3',
         timings: { stt: stt.durationMs, translation: translation.durationMs, tts: speech.durationMs, total: Date.now() - totalStart },
         usage: { translationInputTokens: translation.inputTokens, translationOutputTokens: translation.outputTokens },
       };
@@ -199,7 +199,7 @@ async function produceOpenAISpeechOrDevice(
   signal: AbortSignal,
   requestId: string,
   totalStart: number,
-): Promise<{ audioBase64: string; durationMs: number }> {
+): Promise<{ audioBase64: string; durationMs: number; format?: 'wav' | 'mp3' }> {
   signal.throwIfAborted();
   const started = Date.now();
   // Leave time to deliver the fallback before the 40 s pipeline deadline.
@@ -233,7 +233,7 @@ async function produceSpeech(
   try {
     if (config.ttsProvider === 'openai') {
       const tts = await synthesizeSpeechOpenAI(text);
-      return { audioBase64: tts.audioBase64, format: 'mp3', durationMs: tts.durationMs };
+      return { audioBase64: tts.audioBase64, format: tts.format ?? 'mp3', durationMs: tts.durationMs };
     }
     if (config.ttsProvider === 'gemini') {
       const tts = await synthesizeSpeechGemini(text);

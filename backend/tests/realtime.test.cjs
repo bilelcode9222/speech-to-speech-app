@@ -374,8 +374,10 @@ test('empty Realtime results use the OpenAI fallback regardless of recording len
           called.push('stt'); assert.equal(lang, 'auto'); assert.equal(options.model, 'gpt-4o-transcribe');
           assert.equal(options.signal.aborted, false); return { text: 'Oui', durationMs: 1 };
         },
-        translateOpenAI: async (text, from, to) => { called.push('translation'); assert.equal(text, 'Oui'); assert.equal(from, 'auto'); assert.equal(to, 'en'); return { translatedText: 'Yes', durationMs: 1 }; },
         synthesizeSpeechOpenAI: async (text, options) => { called.push('voice'); assert.equal(text, 'Yes'); assert.equal(options.model, 'gpt-4o-mini-tts'); return { audioBase64: 'mp3', durationMs: 1 }; },
+      },
+      '../services/gpt6TranslationService': {
+        translateGPT6: async (text, from, to) => { called.push('translation'); assert.equal(text, 'Oui'); assert.equal(from, 'auto'); assert.equal(to, 'en'); return { translatedText: 'Yes', durationMs: 1 }; },
       },
     });
     StageError = load('types/index.ts').StageError;

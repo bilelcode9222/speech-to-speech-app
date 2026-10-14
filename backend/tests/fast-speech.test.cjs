@@ -27,7 +27,7 @@ function fixture() {
     Date: { now: () => now }, setTimeout: (fn, ms) => { timers.set(fn, ms); return fn; }, clearTimeout: fn => timers.delete(fn),
   });
   return { calls, timers, logs, parent,
-    start: () => exports.synthesizeFastSpeech('Private test text', 'gpt-4o-mini-tts', parent.signal, 'test-id'),
+    start: (model = 'gpt-4o-mini-tts') => exports.synthesizeFastSpeech('Private test text', model, parent.signal, 'test-id'),
     hedge: async () => {
       assert.equal(timers.size, 1);
       const [fn, ms] = [...timers][0]; assert.equal(ms, 2500);
@@ -36,6 +36,16 @@ function fixture() {
     time: value => { now = value; },
   };
 }
+
+test('replacement voice never hedges or retries and preserves the WAV format', async () => {
+  const h = fixture(); const promise = h.start('gpt-realtime-2.1-mini'); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.timers.size, 0);
+  h.calls[0].resolve({ audioBase64: 'wav', format: 'wav', durationMs: 3000 });
+  assert.equal((await promise).format, 'wav'); assert.equal(h.calls.length, 1);
+  const failed = fixture(); const rejected = assert.rejects(failed.start('gpt-realtime-2.1-mini'));
+  await tick(); failed.calls[0].reject(Error('provider failure')); await rejected;
+  assert.equal(failed.calls.length, 1); assert.equal(failed.timers.size, 0);
+});
 
 test('normal voice uses one AI request and clears the unused retry timer', async () => {
   const h = fixture(); const result = h.start(); await tick();

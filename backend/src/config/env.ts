@@ -57,8 +57,8 @@ export const config = {
 
   gpt6Translation: {
     model: 'gpt-6-sol',
-    transcriptionModel: 'gpt-4o-transcribe',
-    speechModel: 'gpt-4o-mini-tts',
+    transcriptionModel: 'gpt-transcribe',
+    speechModel: 'gpt-realtime-2.1-mini',
   },
 
   realtimeTranslation: {

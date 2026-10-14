@@ -4,6 +4,7 @@ import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { languageName } from '../utils/languages';
 import { isHallucination } from './geminiService';
+import { synthesizeRealtimeSpeech } from './realtimeSpeech';
 import {
   SpeechResult,
   StageError,
@@ -36,18 +37,19 @@ export async function transcribeOpenAI(
 
     const form = new FormData();
     form.append('file', buffer, { filename: `audio.${format}`, contentType: mime(format) });
-    form.append('model', options.model ?? config.openai.sttModel);
+    const model = options.model ?? config.openai.sttModel;
+    form.append('model', model);
     // En mode auto, on n'envoie pas le paramètre : Whisper détecte alors
     // lui-même la langue. Utile quand on ignore ce que va dire l'autre.
     if (language !== 'auto') {
-      form.append('language', language);
+      form.append(model === 'gpt-transcribe' ? 'languages[]' : 'language', language);
     }
     form.append('response_format', 'json');
     // Whisper renvoie parfois une transcription vide sur un énoncé très
     // court (un mot isolé) : sans contexte, il préfère ne rien produire
     // plutôt que de risquer une erreur. Un prompt d'amorce et une
     // température nulle le rendent nettement plus déterministe.
-    form.append('temperature', '0');
+    if (model !== 'gpt-transcribe') form.append('temperature', '0');
 
     const response = await axios.post(`${BASE}/audio/transcriptions`, form, {
       headers: {
@@ -152,6 +154,9 @@ export async function translateOpenAI(
  * Le modèle et la voix sont conservés lors d'une seconde tentative.
  */
 export async function synthesizeSpeechOpenAI(text: string, options: OpenAIRequestOptions = {}): Promise<SpeechResult> {
+  if ((options.model ?? config.openai.ttsModel) === 'gpt-realtime-2.1-mini') {
+    return synthesizeRealtimeSpeech(text, options.signal);
+  }
   const started = Date.now();
 
   try {

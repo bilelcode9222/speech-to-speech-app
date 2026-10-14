@@ -29,6 +29,7 @@ export interface TranslationResult {
 export interface SpeechResult {
   audioBase64: string;
   durationMs: number;
+  format?: 'wav' | 'mp3';
 }
 
 export interface PipelineResult {

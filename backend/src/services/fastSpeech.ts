@@ -12,6 +12,14 @@ export function synthesizeFastSpeech(
   requestId: string,
 ): Promise<SpeechResult> {
   signal.throwIfAborted();
+  // The replacement voice uses one session only: no speculative paid duplicate.
+  if (model === 'gpt-realtime-2.1-mini') {
+    return synthesizeSpeechOpenAI(text, { model, signal }).then(speech => {
+      signal.throwIfAborted();
+      logger.info(`Pipeline ${requestId} : voix IA prête en ${speech.durationMs}ms (tentative unique)`);
+      return speech;
+    });
+  }
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
@@ -62,7 +70,7 @@ export function synthesizeFastSpeech(
         cleanup();
         const durationMs = Date.now() - started;
         logger.info(`Pipeline ${requestId} : voix IA prête en ${durationMs}ms (tentative ${number})`);
-        resolve({ audioBase64: speech.audioBase64, durationMs });
+        resolve({ ...speech, durationMs });
       }, failed);
     };
     signal.addEventListener('abort', onAbort, { once: true });
