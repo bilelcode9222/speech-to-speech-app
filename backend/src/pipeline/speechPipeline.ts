@@ -11,6 +11,7 @@ import { config } from '../config/env';
 import { decodeRealtimeAudio } from '../services/realtimeAudio';
 import { translateRealtimePcm } from '../services/realtimeTranslationService';
 import { translateGPT6 } from '../services/gpt6TranslationService';
+import { synthesizeFastSpeech } from '../services/fastSpeech';
 import { logger } from '../utils/logger';
 import { canBeTarget, isSupported } from '../utils/languages';
 import { PipelineResult, StageError, TranslationRequest } from '../types';
@@ -207,7 +208,7 @@ async function produceOpenAISpeechOrDevice(
   if (budgetMs > 0) {
     const voiceSignal = AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]);
     try {
-      const speech = await synthesizeSpeechOpenAI(text, { model, signal: voiceSignal });
+      const speech = await synthesizeFastSpeech(text, model, voiceSignal, requestId);
       voiceSignal.throwIfAborted();
       if (speech.audioBase64) return speech;
       reason = 'empty_audio';

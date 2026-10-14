@@ -149,7 +149,7 @@ export async function translateOpenAI(
 
 /**
  * Synthèse vocale.
- * tts-1 est le plus rapide : environ 0,5 s avant le premier octet.
+ * Le modèle et la voix sont conservés lors d'une seconde tentative.
  */
 export async function synthesizeSpeechOpenAI(text: string, options: OpenAIRequestOptions = {}): Promise<SpeechResult> {
   const started = Date.now();
@@ -181,6 +181,8 @@ export async function synthesizeSpeechOpenAI(text: string, options: OpenAIReques
 
     return { audioBase64, durationMs };
   } catch (error) {
+    // Deadlines and losing parallel attempts are expected cancellations.
+    options.signal?.throwIfAborted();
     logger.error('Échec OpenAI (voix)', error);
     throw new StageError('tts', describeBinary(error));
   }

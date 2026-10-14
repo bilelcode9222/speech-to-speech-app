@@ -23,6 +23,8 @@ function loader(mocks = {}, globals = {}) {
       AbortController, AbortSignal, Float32Array, BigInt64Array, __dirname: path.dirname(absolute), process,
       require(id) {
         if (id in mocks) return mocks[id];
+        // The voice coordinator imports the same provider from its own directory.
+        if (id === './openaiService' && '../services/openaiService' in mocks) return mocks['../services/openaiService'];
         if (!id.startsWith('.')) return require(id);
         const resolved = path.resolve(path.dirname(absolute), id);
         return load(fs.existsSync(`${resolved}.ts`) ? `${resolved}.ts` : `${resolved}/index.ts`);
