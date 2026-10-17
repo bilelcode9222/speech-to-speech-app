@@ -47,3 +47,4 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - run: npm install
       - run: npm run check
+      - run: npm test
