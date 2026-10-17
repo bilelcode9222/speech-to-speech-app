@@ -49,6 +49,15 @@ export async function configureRevenueCat(): Promise<boolean> {
       Purchases.configure({ apiKey });
       const installationId = await getInstallationId();
       await Purchases.logIn(installationId);
+      // Collect for the identified customer. AdServices is optional: attribution
+      // failures must never disable purchases or premium entitlement checks.
+      if (!apiKey.startsWith('test_')) {
+        try {
+          await Purchases.enableAdServicesAttributionTokenCollection();
+        } catch (error) {
+          console.log('[RevenueCat] attribution Apple Ads indisponible', error);
+        }
+      }
       configured = true;
       return true;
     } catch (error) {
