@@ -51,15 +51,21 @@ export async function candidates(landmark,{offset=0}={}) {
  const data=await (await commonsRequest(`https://commons.wikimedia.org/w/api.php?${params}`)).json();
  if(data.error) throw new Error('Wikimedia search failed');
  const found=Object.values(data.query?.pages??{}).filter(p=>matchesLandmark(p.title,landmark)).map(eligible).filter(Boolean).sort((a,b)=>b.rank-a.rank);
+ found.nextOffset=data.continue?.gsroffset??null;
  cache.set(cacheKey,found);return found;
 }
 export async function selectPhotos(ordinal,used=new Set()) {
  const selected=[];const seen=new Set(used);
  for(let index=0;index<LANDMARKS.length && selected.length<5;index++) {
   const landmark=LANDMARKS[(ordinal*5+index)%LANDMARKS.length];
-  let choices=await candidates(landmark);
-  let photo=choices.find(p=>!seen.has(p.id));
-  if(!photo) {choices=await candidates(landmark,{offset:50});photo=choices.find(p=>!seen.has(p.id));}
+  let photo,offset=0;
+  // Continue beyond the first 100 results as the sixty-day photo history grows.
+  while(Number.isInteger(offset)&&offset<1000&&!photo) {
+   const choices=await candidates(landmark,{offset});
+   photo=choices.find(p=>!seen.has(p.id));
+   const next=choices.nextOffset;
+   offset=Number.isInteger(next)&&next>offset?next:null;
+  }
   if(photo) {selected.push({...photo,landmark});seen.add(photo.id);}
  }
  if(selected.length!==5) throw new Error('Not enough unused commercially reusable landscape photos; nothing will be published');
