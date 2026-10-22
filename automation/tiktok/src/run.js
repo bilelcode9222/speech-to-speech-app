@@ -13,7 +13,7 @@ async function main() {
  const publer=new Publer({key:env.PUBLER_API_KEY,workspace:env.PUBLER_WORKSPACE_ID,account});
  const state=new State(env.DATABASE_URL,account);
  try {
-  await state.open();await publer.checkAccount();
+  await state.open();await publer.checkAccount();log('connected');
   const now=new Date();
   const range={from:DateTime.fromJSDate(now).minus({days:7}).toISODate(),to:DateTime.fromJSDate(now).plus({days:4}).toISODate()};
   let posts=await publer.posts(range.from,range.to);
@@ -39,6 +39,7 @@ async function main() {
    const existing=posts.filter(p=>p.account_id===account&&Date.parse(p.scheduled_at)===Date.parse(slot.at));
    if(existing.length) {await state.update(slot.key,{state:'occupied'});log('occupied',{slot:slot.key});continue;}
    if(!row.manifest) {
+    log('selecting_photos',{slot:slot.key});
     const photos=await selectPhotos(slot.ordinal,used);
     row.manifest={slot,slides:slidesFor(slot.ordinal),photos,editorial:'Owner-selected promotional opinions; not independent tests or App Store ratings.'};
     await state.update(slot.key,{manifest:row.manifest});
@@ -49,6 +50,7 @@ async function main() {
     const jpeg=await renderSlide(row.manifest.slides[i],await downloadPhoto(row.manifest.photos[i]));
     media.push(await publer.upload(jpeg,`nevi-${slot.key}-${i+1}.jpg`));
     await state.update(slot.key,{media});
+    log('image_ready',{slot:slot.key,image:i+1});
    }
    // Durable write-ahead state: a crash/timeout after this point cannot resubmit the post.
    await state.update(slot.key,{state:'submitting'});

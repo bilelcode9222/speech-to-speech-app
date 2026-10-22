@@ -38,7 +38,8 @@ export function slidesFor(ordinal) {
  ];
 }
 export function photoCaption(photos=[]) {
- const credits=photos.map((p,i)=>`${i+1}. ${p.title} — ${p.author||"Wikimedia Commons"} — ${p.license} — ${p.source}`);
+ const author=p=> (p.author||'Wikimedia Commons').replace(/^This Photo was taken by\s+([^\n]+)\.[\s\S]*$/i,'$1');
+ const credits=photos.map((p,i)=>`${i+1}. ${p.title} — ${author(p)} — ${p.license} — ${p.source}`);
  const licenses=[...new Set(photos.filter(p=>p.license.startsWith("CC BY")).map(p=>p.licenseUrl))];
  return CAPTION+(credits.length?"\n\nPhotos recadrées, texte ajouté :\n"+credits.join("\n")+(licenses.length?"\nLicences : "+licenses.join(" "):""):"");
 }

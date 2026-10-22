@@ -38,13 +38,13 @@ export class Publer {
  }
  async job(id) {
   const result=await this.request('/job_status/'+encodeURIComponent(id));
-  const data=result.data;
+  const data=result.data??result;
   if(!data) throw new Error('Unexpected Publer job response');
   const status=data.result?.status??data.status;
-  const failures=data.result?.payload?.failures;
+  const failures=data.result?.payload?.failures??data.payload?.failures;
   if(status==='failed'||(failures&&Object.keys(failures).length)) throw new Error('Publer scheduling job failed; review it before retrying');
-  if(!['working','complete'].includes(status)) throw new Error('Unknown Publer job status');
-  return status;
+  if(!['working','complete','completed'].includes(status)) throw new Error('Unknown Publer job status');
+  return status==='completed'?'complete':status;
  }
 }
 export function matchPost(posts,account,slot) {

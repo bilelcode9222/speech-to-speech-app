@@ -128,3 +128,16 @@ test('The named monument must be the image subject, not merely a search-page men
  assert.equal(matchesLandmark('Paris - Eiffelturm und Marsfeld2.jpg','Eiffel Tower'),true);
  assert.equal(matchesLandmark('GoldenGateBridge BakerBeach MC.jpg','Golden Gate Bridge'),true);
 });
+
+test('Publer accepts documented flat jobs and refuses flat partial failures',async()=>{
+ for(const result of [{status:'complete',payload:{failures:{}}},{status:'completed',payload:{}},{data:{result:{status:'complete',payload:{}}}}]) {
+  assert.equal(await new Publer({fetchJSON:async()=>result}).job('id'),'complete');
+ }
+ for(const result of [{status:'failed'},{status:'completed',payload:{failures:{one:'invalid'}}}]) {
+  await assert.rejects(new Publer({fetchJSON:async()=>result}).job('id'));
+ }
+});
+test('Photographer credit keeps the name without template instructions',()=>{
+ const p={...eligible(photo()),author:'This Photo was taken by Supanut Arunoprayote.\n\nFeel free to use any of my images.'};
+ const text=photoCaption([p]);assert.ok(text.includes('Supanut Arunoprayote'));assert.ok(!text.includes('Feel free'));assert.ok(text.includes('CC BY 4.0'));
+});

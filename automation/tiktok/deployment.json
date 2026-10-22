@@ -1,5 +1,5 @@
 {
-  "status": "activation_in_progress",
+  "status": "deployed_enabled_first_run_validation",
   "activation_authorized": true,
   "user_instruction": "Automatiser la création et la publication ; créer la clé API Publer et configurer Render.",
   "target": {
@@ -16,14 +16,15 @@
     "branch": "codex/nevi-tiktok-automation"
   },
   "defaultEnvironment": {
-    "ENABLED": "false",
+    "ENABLED": "true",
     "POST_TIMEZONE": "Europe/Paris",
     "POST_HOURS": "9,12,15,18,21",
     "PUBLER_ACCOUNT_ID": "6ada53b245f45e801c068964",
     "PUBLER_WORKSPACE_ID": "6ada53865ef9e144c2be924b"
   },
-  "secretsStillRequired": [
-    "DATABASE_URL"
-  ],
-  "publicationCount": 0
+  "secretsStillRequired": [],
+  "publicationCount": 0,
+  "serviceId": "crn-dbd67e8n74is73agupeg",
+  "dashboardUrl": "https://dashboard.render.com/cron/crn-dbd67e8n74is73agupeg",
+  "databaseId": "dpg-daeplbqd0e5s739gdrjg-a"
 }
