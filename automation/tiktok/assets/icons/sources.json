@@ -1,0 +1,27 @@
+[
+  {
+    "app": "Microsoft Translator",
+    "storeId": 1018949559,
+    "artwork": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/2c/14/3d/2c143da8-2998-a6aa-a03c-7e7f1a0b0703/AppIcon-0-1x_U007emarketing-0-11-0-0-85-220-0.png/512x512bb.jpg"
+  },
+  {
+    "app": "iTranslate Traducteur",
+    "storeId": 288113403,
+    "artwork": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/49/04/f4/4904f4fb-f772-d955-4801-28442e915158/AppIcon-0-0-1x_U007emarketing-0-8-0-sRGB-85-220.png/512x512bb.jpg"
+  },
+  {
+    "app": "Reverso Context Traducteur",
+    "storeId": 919979642,
+    "artwork": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/0a/b6/63/0ab66344-b928-78d2-ee2a-09fb6664a185/AppIcon-0-0-1x_U007epad-0-1-0-0-85-220.png/512x512bb.jpg"
+  },
+  {
+    "app": "Naver Papago - Traducteur par",
+    "storeId": 1147874819,
+    "artwork": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/5c/e2/ed/5ce2ed44-ffa8-b660-e371-a8baed2c9469/Icon-0-0-1x_U007epad-0-1-0-sRGB-85-220.png/512x512bb.jpg"
+  },
+  {
+    "app": "Yandex Translate",
+    "storeId": 584291439,
+    "artwork": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/ac/47/3b/ac473b8e-d3e6-9b41-658e-7b9bf7f937ba/AppIcon-0-0-1x_U007epad-0-9-0-0-85-220.png/512x512bb.jpg"
+  }
+]

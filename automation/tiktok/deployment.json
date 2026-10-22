@@ -1,0 +1,30 @@
+{
+  "status": "prepared_only_not_deployed",
+  "activation_authorized": false,
+  "user_instruction": "Terminer la préparation, mais ne rien mettre en ligne.",
+  "target": {
+    "workspaceId": "tea-d9rq8649v7es73crm9gg",
+    "name": "nevi-tiktok-carousels",
+    "region": "oregon",
+    "runtime": "docker",
+    "dockerContext": "automation/tiktok",
+    "dockerfilePath": "automation/tiktok/Dockerfile",
+    "schedule": "15 * * * *",
+    "autoDeploy": "no",
+    "plan": "0.5c-512mb",
+    "repo": "https://github.com/bilelcode9222/speech-to-speech-app",
+    "branch": "codex/nevi-tiktok-automation"
+  },
+  "defaultEnvironment": {
+    "ENABLED": "false",
+    "POST_TIMEZONE": "Europe/Paris",
+    "POST_HOURS": "9,12,15,18,21",
+    "PUBLER_ACCOUNT_ID": "6ada53b245f45e801c068964"
+  },
+  "secretsStillRequired": [
+    "PUBLER_API_KEY",
+    "PUBLER_WORKSPACE_ID",
+    "DATABASE_URL"
+  ],
+  "publicationCount": 0
+}
