@@ -121,3 +121,10 @@ test('Photo requests identify the app and cache downloads instead of repeating t
   assert.deepEqual(first,second);assert.equal(calls,1);
  } finally {globalThis.fetch=original;await fs.rm(cacheDir,{recursive:true,force:true});}
 });
+
+test('The named monument must be the image subject, not merely a search-page mention',async()=>{
+ const {matchesLandmark}=await import('../src/photos.js');
+ assert.equal(matchesLandmark('Light trails near Paris, 27 May 2022.jpg','Eiffel Tower'),false);
+ assert.equal(matchesLandmark('Paris - Eiffelturm und Marsfeld2.jpg','Eiffel Tower'),true);
+ assert.equal(matchesLandmark('GoldenGateBridge BakerBeach MC.jpg','Golden Gate Bridge'),true);
+});

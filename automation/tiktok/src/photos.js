@@ -14,15 +14,21 @@ async function commonsRequest(url) {
  return fetchChecked(url,{headers:{'User-Agent':USER_AGENT}});
 }
 export const LANDMARKS=[
- 'Eiffel Tower','Big Ben Westminster','Santorini Oia','Great Wall China','Mount Fuji','Colosseum Rome','Taj Mahal','Pyramids Giza','Acropolis Athens','Golden Gate Bridge','Machu Picchu','Tower Bridge','Mont Saint Michel','Hagia Sophia','Petra Jordan','Angkor Wat','Grand Canal Venice','Buda Castle','Neuschwanstein Castle','Chichen Itza','Matterhorn','Cappadocia','Lisbon Belem Tower','Seoul Gyeongbokgung',
+ 'Eiffel Tower','Big Ben Westminster','Santorini Oia','Great Wall China','Mount Fuji','Colosseum Rome','Taj Mahal','Pyramids Giza','Acropolis Athens','Golden Gate Bridge','Machu Picchu','Tower Bridge','Mont Saint Michel','Hagia Sophia exterior','Petra Jordan','Angkor Wat','Grand Canal Venice','Buda Castle','Neuschwanstein Castle','Chichen Itza','Matterhorn','Cappadocia','Lisbon Belem Tower','Seoul Gyeongbokgung',
 ];
+const SUBJECTS=[['eiffel','eiffelturm'],['bigben','westminster'],['santorini','oia'],['greatwall'],['fuji'],['colosseum','colosseo','coliseum'],['tajmahal'],['giza','pyramid'],['acropolis','parthenon','erechthe'],['goldengate'],['machupicchu'],['towerbridge'],['montsaintmichel','montstmichel'],['hagiasophia','ayasofya'],['petra'],['angkor'],['grandcanal','canalgrande'],['budacastle'],['neuschwanstein'],['chichenitza'],['matterhorn','cervin'],['cappadocia','kapadokya'],['belem'],['gyeongbok']];
+export function matchesLandmark(title,landmark) {
+ const words=SUBJECTS[LANDMARKS.indexOf(landmark)];
+ const normalized=title.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ return Boolean(words?.some(word=>normalized.includes(word)));
+}
 const plain=s=>(s??'').replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').trim();
 export function eligible(page) {
  const info=page.imageinfo?.[0],meta=info?.extmetadata;
  if(!info||!meta) return null;
  const license=plain(meta.LicenseShortName?.value);
  const subject=page.title+' '+plain(meta.ImageDescription?.value)+' '+plain(meta.Categories?.value);
- if(/mosaic|mosaïque|olympic|olympiqu|artworks?|paintings?|canvas|medallion|pre.columbian art|feathered snake|looking up the center|sous la tour|museum|musée|sculptur|statue|stair|interior|intérieur|inside|underground|close[ -]?up|detail|fragment|inscription|ceiling|floor|portrait|owl|bust\b|coins?\b|relief\b/i.test(subject)) return null;
+ if(/mahya|mosaic|mosaïque|olympic|olympiqu|artworks?|paintings?|canvas|medallion|pre.columbian art|feathered snake|looking up the center|sous la tour|museum|musée|sculptur|statue|stair|interior|intérieur|inside|underground|close[ -]?up|detail|fragment|inscription|ceiling|floor|portrait|owl|bust\b|coins?\b|relief\b/i.test(subject)) return null;
  // CC BY attribution is emitted in the public caption; share-alike/NC/ND are excluded.
  if(!['CC0','Public domain','CC BY 2.0','CC BY 3.0','CC BY 4.0'].includes(license)) return null;
  if(plain(meta.Restrictions?.value)) return null;
@@ -44,7 +50,7 @@ export async function candidates(landmark,{offset=0}={}) {
  const params=new URLSearchParams({action:'query',format:'json',generator:'search',gsrsearch:`${landmark} filetype:bitmap`,gsrnamespace:'6',gsrlimit:'50',gsroffset:String(offset),prop:'imageinfo',iiprop:'url|extmetadata|size|mime',iiurlwidth:'1920'});
  const data=await (await commonsRequest(`https://commons.wikimedia.org/w/api.php?${params}`)).json();
  if(data.error) throw new Error('Wikimedia search failed');
- const found=Object.values(data.query?.pages??{}).map(eligible).filter(Boolean).sort((a,b)=>b.rank-a.rank);
+ const found=Object.values(data.query?.pages??{}).filter(p=>matchesLandmark(p.title,landmark)).map(eligible).filter(Boolean).sort((a,b)=>b.rank-a.rank);
  cache.set(cacheKey,found);return found;
 }
 export async function selectPhotos(ordinal,used=new Set()) {
