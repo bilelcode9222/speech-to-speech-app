@@ -1,8 +1,11 @@
 import {json} from './http.js';
 import {CAPTION,postPayload} from './content.js';
 export class Publer {
- constructor({key,workspace,account,fetchJSON=json}) {this.key=key;this.workspace=workspace;this.account=account;this.fetchJSON=fetchJSON;}
+ constructor({key,workspace,account,fetchJSON=json,requestInterval=1500}) {this.key=key;this.workspace=workspace;this.account=account;this.fetchJSON=fetchJSON;this.requestInterval=requestInterval;this.lastRequest=0;}
  async request(path,options={}) {
+  const wait=this.requestInterval-(Date.now()-this.lastRequest);
+  if(wait>0) await new Promise(resolve=>setTimeout(resolve,wait));
+  this.lastRequest=Date.now();
   return this.fetchJSON(`https://app.publer.com/api/v1${path}`,{...options,headers:{Authorization:`Bearer-API ${this.key}`,'Publer-Workspace-Id':this.workspace,...options.headers}});
  }
  async checkAccount() {
@@ -14,12 +17,15 @@ export class Publer {
   return account;
  }
  async posts(from,to) {
-  const all=[];
+  const all=[],seen=new Set();
   for(let page=0;page<100;page++) {
    const params=new URLSearchParams({state:'all',from,to,page:String(page),'account_ids[]':this.account});
    const data=await this.request('/posts?'+params);
    if(!Array.isArray(data.posts)) throw new Error('Unexpected Publer posts response');
-   all.push(...data.posts);
+   // Calendar date ranges can return total:null and repeat the whole range for every page.
+   const fresh=data.posts.filter(post=>!seen.has(post.id));
+   if(data.posts.length&&fresh.length===0) return all;
+   fresh.forEach(post=>seen.add(post.id));all.push(...fresh);
    if(data.posts.length===0 || (typeof data.total==='number'&&all.length>=data.total) || (typeof data.total_pages==='number'&&page+1>=data.total_pages)) return all;
   }
   throw new Error('Publer post pagination exceeded its safe limit');

@@ -141,3 +141,9 @@ test('Photographer credit keeps the name without template instructions',()=>{
  const p={...eligible(photo()),author:'This Photo was taken by Supanut Arunoprayote.\n\nFeel free to use any of my images.'};
  const text=photoCaption([p]);assert.ok(text.includes('Supanut Arunoprayote'));assert.ok(!text.includes('Feel free'));assert.ok(text.includes('CC BY 4.0'));
 });
+
+test('Calendar date-range responses with null total do not loop on the same posts',async()=>{
+ let calls=0;const post={id:'one',state:'scheduled'};
+ const api=new Publer({requestInterval:0,fetchJSON:async()=>{calls++;return {posts:[post],total:null};}});
+ assert.deepEqual(await api.posts('2026-10-15','2026-10-26'),[post]);assert.equal(calls,2);
+});

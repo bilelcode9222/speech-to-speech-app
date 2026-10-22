@@ -6,7 +6,8 @@ export async function fetchChecked(url,options={}) {
   if(response.ok) return response;
   // Respect rate limits for reads only. Never retry a potentially accepted write.
   const retry=response.headers.get('retry-after');
-  const seconds=retry ? (/^\d+$/.test(retry)?Number(retry):Math.ceil((Date.parse(retry)-Date.now())/1000)) : 5*(attempt+1);
+  const reset=Number(response.headers.get('x-ratelimit-reset'));
+  const seconds=retry ? (/^\d+$/.test(retry)?Number(retry):Math.ceil((Date.parse(retry)-Date.now())/1000)) : (reset>0?Math.max(0,Math.ceil(reset-Date.now()/1000)):5*(attempt+1));
   if(readOnly&&attempt<2&&[429,502,503,504].includes(response.status)&&Number.isFinite(seconds)&&seconds>=0&&seconds<=30) {
    await response.body?.cancel();await delay(Math.max(1000,seconds*1000));continue;
   }
