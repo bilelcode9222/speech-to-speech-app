@@ -1,6 +1,8 @@
 # Carrousels TikTok Nevi — automatisation cloud
 
-Activation autorisée le 22 octobre 2026. La clé Publer dédiée est créée ; les lectures authentifiées confirment le compte TikTok `neviai.app`, la publication publique et l’absence de validation manuelle obligatoire. `ENABLED=false` reste la valeur par défaut jusqu’au raccordement et à la vérification Render. Aucun secret ne doit être enregistré dans Git.
+Actif sur Render depuis le 22 octobre 2026 : [nevi-tiktok-carousels](https://dashboard.render.com/cron/crn-dbd67e8n74is73agupeg). Clé Publer dédiée conservée dans les secrets Render, compte TikTok `neviai.app`, base privée `nevi-production`, schéma `nevi_marketing`. La production de l’application utilise toujours sa branche habituelle ; le cron utilise `codex/nevi-tiktok-automation`.
+
+La création et la programmation cloud ont été vérifiées : **10 carrousels, 50 photos de sources distinctes**, cinq publications le 23 octobre et cinq le 24 octobre. Première publication prévue le **23 octobre 2026 à 9 h, heure de Paris** ; sa publication effective sur TikTok n’était pas encore observable lors de l’activation. Aucune confirmation manuelle ou notification mobile n’est nécessaire pour publier. Le cron actif utilise `ENABLED=true` ; la valeur locale par défaut reste désactivée.
 
 ## Contenu
 
@@ -14,7 +16,7 @@ Cinq images JPEG 1080 × 1440, photos de pays/monuments, texte blanc avec contou
 
 Les deux positions centrales sont exclusivement tirées de DeepL, Apple Traduire, Microsoft Translator, iTranslate, Reverso Context, Papago et Yandex Translate. Deux carrousels consécutifs n'utilisent pas les mêmes applications centrales. Les notes sont les opinions publicitaires demandées par le propriétaire de Nevi, pas les résultats d'un test indépendant ou les notes App Store.
 
-## Fonctionnement prévu dans le cloud
+## Fonctionnement dans le cloud
 
 Un cron Render horaire prépare les publications des 48 heures suivantes : 9 h, 12 h, 15 h, 18 h, 21 h en Europe/Paris, changements d'heure inclus. Il ne rattrape pas les créneaux passés en publiant en rafale. Publer prend en charge la publication directe sur le compte TikTok connecté `neviai.app` (compte Publer `6ada53b245f45e801c068964`). Il ne s'agit pas d'un simple rappel mobile.
 
@@ -49,15 +51,16 @@ node src/preview.js /chemin/absolu/apercu 1 /chemin/absolu/assets
 
 Tests couverts : changements d'heure Paris, cinq créneaux/jour, niche et rotation des applications, globe conservé, licences et crédits, cinq médias, absence de rappel mobile, absence de répétition d'un envoi ambigu, erreurs des jobs, confirmation dans le calendrier, exécution désactivée sans aucun accès externe.
 
-## Déploiement et activation
+## Exploitation
 
-1. Autorisation de publication et clé API Publer dédiée obtenues. La clé possède les accès comptes/espaces en lecture et publications/médias en lecture-écriture.
-2. Renseigner `PUBLER_API_KEY`, `PUBLER_WORKSPACE_ID`, `PUBLER_ACCOUNT_ID` et `DATABASE_URL` dans les secrets Render, jamais dans Git ni dans le chat. Utiliser une base disponible en Oregon dans My Workspace, avec accès au seul schéma nécessaire si possible.
-3. Déployer ce dossier à partir d'une branche dédiée, sans modifier le service de l'application. Le Dockerfile installe Liberation Sans pour une typographie compatible avec le rendu Arial local.
-4. Vérifier la réponse réelle de l'API pour le compte, sa visibilité publique, les formats des réponses, les permissions TikTok, l'import des images et les crédits.
-5. Après autorisation, passer `ENABLED=true`, lancer une exécution contrôlée, vérifier les identifiants des publications dans le calendrier et observer la première publication effective. Seulement alors déclarer l'automatisation opérationnelle.
+- Exécution Render à la minute 15 de chaque heure UTC. Les horaires de publication sont calculés en Europe/Paris, avec les changements d’heure.
+- Les secrets requis sont `PUBLER_API_KEY`, `PUBLER_WORKSPACE_ID`, `PUBLER_ACCOUNT_ID` et `DATABASE_URL`. Ils sont configurés dans Render, jamais dans Git.
+- Déploiement manuel de la branche dédiée, Docker Node 24 avec Fontconfig et Liberation Sans. Les modifications du dépôt ne déclenchent pas automatiquement de déploiement du cron.
+- Les journaux indiquent les étapes `connected`, `selecting_photos`, `image_ready`, `scheduled`, `complete`, puis `published` lorsque Publer confirme la publication effective.
+- Une erreur de publication ou un résultat d’envoi ambigu interrompt les nouveaux envois. Vérifier le calendrier Publer avant toute reprise manuelle d’un état `submitting` ; ne pas supprimer son historique pour forcer un nouvel envoi.
+- Pour arrêter les nouvelles créations, passer `ENABLED=false` dans Render. Les publications déjà programmées restent actives dans Publer et doivent être traitées séparément si l’arrêt doit aussi les concerner.
 
-**Validation en cours :** le téléchargement Commons et 25 photos nouvelles sont vérifiés. Les lectures Publer authentifiées sont validées ; le raccordement Postgres privé, l’exécution cloud et la programmation réelle restent à contrôler. Le téléchargement respecte les quotas, les miniatures standard et Retry-After ; les délais longs sont conservés en Postgres.
+**Validation réelle :** accès privé Postgres, import des images, cinq images par post, visibilité publique, label promotionnel, publication directe, dix horaires et cinquante sources distinctes. Les réponses réelles Publer ont nécessité la prise en charge des jobs sans enveloppe `data` et des calendriers qui renvoient `total:null` sans pagination. Les requêtes sont espacées ; les réponses 429 et les délais de remise à zéro sont respectés. La sélection des photos peut continuer jusqu’à 1 000 résultats par monument à mesure que l’historique de 60 jours grandit. Le cache local des images est éphémère ; l’historique et les délais longs persistent en Postgres.
 
 Documentation utilisée :
 - https://publer.com/docs/posting/create-posts/media-handling
@@ -73,4 +76,4 @@ Références du correctif :
 - https://www.mediawiki.org/wiki/InstantCommons#Common_thumbnail_sizes
 - https://attribution.wikimedia.org/technical-implementation.html#user-agent-policy-and-rate-limits
 
-Validation locale : 15 tests automatisés passent, dont la conservation du globe Apple, la niche traduction, les licences, les erreurs HTTP, le cache des photos et les horaires Paris. Audit npm : aucune vulnérabilité connue signalée lors de la préparation.
+Validation locale : 18 tests automatisés passent, dont la conservation du globe Apple, la niche traduction, les licences, les erreurs HTTP, le cache des photos et les horaires Paris. Audit npm : aucune vulnérabilité connue signalée lors de la préparation.

@@ -1,5 +1,5 @@
 {
-  "status": "deployed_enabled_first_run_validation",
+  "status": "active_scheduling_verified",
   "activation_authorized": true,
   "user_instruction": "Automatiser la création et la publication ; créer la clé API Publer et configurer Render.",
   "target": {
@@ -26,5 +26,10 @@
   "publicationCount": 0,
   "serviceId": "crn-dbd67e8n74is73agupeg",
   "dashboardUrl": "https://dashboard.render.com/cron/crn-dbd67e8n74is73agupeg",
-  "databaseId": "dpg-daeplbqd0e5s739gdrjg-a"
+  "databaseId": "dpg-daeplbqd0e5s739gdrjg-a",
+  "scheduledPostCount": 10,
+  "uniquePhotoCount": 50,
+  "firstPublicationAt": "2026-10-23T09:00:00+02:00",
+  "lastVerifiedAt": "2026-10-22T19:42:20Z",
+  "liveCommit": "2d72956891d82f8fce0205ae1577d821ac5a158a"
 }
