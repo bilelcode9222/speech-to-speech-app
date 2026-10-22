@@ -1,7 +1,7 @@
 {
-  "status": "prepared_only_not_deployed",
-  "activation_authorized": false,
-  "user_instruction": "Terminer la préparation, mais ne rien mettre en ligne.",
+  "status": "activation_in_progress",
+  "activation_authorized": true,
+  "user_instruction": "Automatiser la création et la publication ; créer la clé API Publer et configurer Render.",
   "target": {
     "workspaceId": "tea-d9rq8649v7es73crm9gg",
     "name": "nevi-tiktok-carousels",
@@ -19,11 +19,10 @@
     "ENABLED": "false",
     "POST_TIMEZONE": "Europe/Paris",
     "POST_HOURS": "9,12,15,18,21",
-    "PUBLER_ACCOUNT_ID": "6ada53b245f45e801c068964"
+    "PUBLER_ACCOUNT_ID": "6ada53b245f45e801c068964",
+    "PUBLER_WORKSPACE_ID": "6ada53865ef9e144c2be924b"
   },
   "secretsStillRequired": [
-    "PUBLER_API_KEY",
-    "PUBLER_WORKSPACE_ID",
     "DATABASE_URL"
   ],
   "publicationCount": 0

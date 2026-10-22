@@ -1,7 +1,6 @@
-# Carrousels TikTok Nevi — préparation locale, inactive
+# Carrousels TikTok Nevi — automatisation cloud
 
-**Consigne du 22 octobre 2026 : terminer, mais ne rien mettre en ligne.**
-Aucun cron Render n'a été créé, aucune publication n'a été envoyée à Publer, aucune clé API n'a été générée. `ENABLED=false` par défaut bloque l'exécution avant tout accès réseau ou base de données. Le code n'a pas été poussé sur GitHub.
+Activation autorisée le 22 octobre 2026. La clé Publer dédiée est créée ; les lectures authentifiées confirment le compte TikTok `neviai.app`, la publication publique et l’absence de validation manuelle obligatoire. `ENABLED=false` reste la valeur par défaut jusqu’au raccordement et à la vérification Render. Aucun secret ne doit être enregistré dans Git.
 
 ## Contenu
 
@@ -50,15 +49,15 @@ node src/preview.js /chemin/absolu/apercu 1 /chemin/absolu/assets
 
 Tests couverts : changements d'heure Paris, cinq créneaux/jour, niche et rotation des applications, globe conservé, licences et crédits, cinq médias, absence de rappel mobile, absence de répétition d'un envoi ambigu, erreurs des jobs, confirmation dans le calendrier, exécution désactivée sans aucun accès externe.
 
-## Activation ultérieure — pas effectuée
+## Déploiement et activation
 
-1. Obtenir l'autorisation de mise en ligne et de création d'une clé API Publer dédiée. Le bouton est dans Paramètres → API & Webhooks de Safari.
+1. Autorisation de publication et clé API Publer dédiée obtenues. La clé possède les accès comptes/espaces en lecture et publications/médias en lecture-écriture.
 2. Renseigner `PUBLER_API_KEY`, `PUBLER_WORKSPACE_ID`, `PUBLER_ACCOUNT_ID` et `DATABASE_URL` dans les secrets Render, jamais dans Git ni dans le chat. Utiliser une base disponible en Oregon dans My Workspace, avec accès au seul schéma nécessaire si possible.
 3. Déployer ce dossier à partir d'une branche dédiée, sans modifier le service de l'application. Le Dockerfile installe Liberation Sans pour une typographie compatible avec le rendu Arial local.
 4. Vérifier la réponse réelle de l'API pour le compte, sa visibilité publique, les formats des réponses, les permissions TikTok, l'import des images et les crédits.
 5. Après autorisation, passer `ENABLED=true`, lancer une exécution contrôlée, vérifier les identifiants des publications dans le calendrier et observer la première publication effective. Seulement alors déclarer l'automatisation opérationnelle.
 
-**Limite de validation actuelle :** les appels authentifiés Publer et Postgres et l'exécution Render n'ont pas été testés, faute de secrets configurés et conformément à la demande de ne pas mettre en ligne. Le téléchargement Commons a été corrigé : identification explicite du programme (User-Agent avec URL de contact), miniatures standard de 1920 px retournées par l'API, requêtes espacées, cache de métadonnées et cache local des photos pendant sept jours. Les originaux volumineux ne sont pas demandés. Retry-After est respecté et un délai long est conservé en Postgres entre les exécutions. La reprise attend l'expiration du délai ; elle ne contourne pas la limite. L'API Publer authentifiée reste à valider séparément.
+**Validation en cours :** le téléchargement Commons et 25 photos nouvelles sont vérifiés. Les lectures Publer authentifiées sont validées ; le raccordement Postgres privé, l’exécution cloud et la programmation réelle restent à contrôler. Le téléchargement respecte les quotas, les miniatures standard et Retry-After ; les délais longs sont conservés en Postgres.
 
 Documentation utilisée :
 - https://publer.com/docs/posting/create-posts/media-handling
