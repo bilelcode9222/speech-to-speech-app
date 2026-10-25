@@ -6,16 +6,31 @@ import {
 } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 
+const RECORDING_AUDIO_MODE = {
+  allowsRecording: true,
+  playsInSilentMode: true,
+} as const;
+
+/**
+ * Active le mode enregistrement. iOS refuse la session quand un appel, Siri ou
+ * une autre app tient un son non-mixable. Ce son se libère vite, donc on
+ * retente une fois avant d'abandonner.
+ */
+export async function activateRecordingMode(): Promise<void> {
+  try {
+    await setAudioModeAsync(RECORDING_AUDIO_MODE);
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await setAudioModeAsync(RECORDING_AUDIO_MODE);
+  }
+}
+
 /** Demande l'autorisation micro au moment où l'utilisateur veut enregistrer. */
 export async function prepareAudioSession(): Promise<boolean> {
   const permission = await AudioModule.requestRecordingPermissionsAsync();
   if (!permission.granted) return false;
 
-  await setAudioModeAsync({
-    allowsRecording: true,
-    playsInSilentMode: true,
-  });
-
+  await activateRecordingMode();
   return true;
 }
 
