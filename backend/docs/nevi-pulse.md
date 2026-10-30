@@ -56,3 +56,51 @@ for the Nevi AI App Store app to `/webhooks/revenuecat`. Sandbox deliveries stay
 out of revenue. Synthetic `TEST` deliveries appear only in source health, never
 as a customer or sale. The authorization value is held in Render environment
 configuration, not in this repository. Successful deliveries return HTTP 200.
+
+## Apple Ads keyword trials
+
+The **Apple Ads** tab has its own inclusive UTC date range (up to 90 days).
+It reports distinct production trial customers, separately from clicks and paid
+renewals. Repeated RevenueCat event IDs and multiple trial events for one
+customer do not inflate a keyword's trial count. Only the reserved attribution
+attributes `$mediaSource`, `$campaign`, `$adGroup`, `$keyword`,
+`$appleAdsCampaignId`, `$appleAdsAdGroupId`, and `$appleAdsKeywordId` are retained.
+Other customer attributes, including names/emails, remain excluded.
+
+New RevenueCat webhooks populate attribution when those attributes are present.
+Missing attribution is **unknown**, never automatically organic. Search Match
+can lack a keyword. Identical keyword text in different ad groups/campaigns is
+kept separate. Names without IDs cannot be silently matched to report IDs.
+
+For installs, taps, spend, and cost per trial, adapt an Apple Ads keyword report
+to the downloadable CSV template. Required headers: `campaign_id`, `ad_group_id`,
+`keyword_id`, `keyword`, `installs`, `taps`, `spend`, `currency`. Optional headers:
+`campaign`, `ad_group`. Comma or semicolon delimiter, dot decimals, no currency
+symbols; one row per ID combination with all campaign countries aggregated and
+one currency per report. Report dates must match the tab's dates exactly and use
+UTC. Imports are validated before persistence, atomically replace that date
+range, and are protected by the existing dashboard token. No Apple Ads reporting
+API credentials have been configured by this feature. Report imports do not
+create trial/purchase events or change existing financial metrics.
+
+Trials / installs is a **same-period volume ratio**, not a cohort conversion
+rate. Trials can occur after installation, so the ratio may exceed 100%.
+Amounts stay in the report currency; gross transaction revenue remains USD.
+Missing reports and zero denominators are undefined, never fabricated as 0%.
+Low sample flags are shown for fewer than 10 reported installs.
+
+### Historical attribution recovery
+
+The history button processes five known production customers per batch, using
+RevenueCat API v2's customer attributes endpoint. It enriches previously received
+transactions; it does not create historical transactions or recover attribution
+that RevenueCat never collected. The default project is Nevi's `eb8f26ff`,
+overridable with `REVENUECAT_PROJECT_ID`.
+
+It uses `REVENUECAT_ATTRIBUTION_API_KEY`, falling back to the existing server key.
+The key must support API v2 and `customer_information:customers:read`. Legacy or
+insufficient keys produce an explicit configuration message. Secrets and raw
+subscriber responses are never returned or logged. Successful checks (including
+missing attribution) are cached for 24 hours. On authentication, network, or rate
+limit failure, the batch stops; completed customers remain saved and the failed
+customer is retryable. The existing purchase/activation flow is unchanged.

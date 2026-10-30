@@ -64,13 +64,14 @@ function metric(label, value, detail, previous, current, invert) {
 }
 let token='', data=null, page='overview', chartKey='revenueUsd', filter='all', busy=false, requestController=null, journeyController=null, activeJourney=null, journeyId=null, focusBeforeDrawer=null;
 try {token=localStorage.getItem('nevi-pulse-token') || '';} catch (_) {}
-const titles={overview:'Votre app, en un coup d’œil.',people:'Comprenez chaque parcours.',money:'Vos revenus et vos coûts.',quality:'Gardez une app qui fonctionne.',guide:'Tous vos chiffres, expliqués.'};
+const titles={overview:'Votre app, en un coup d’œil.',people:'Comprenez chaque parcours.',money:'Vos revenus et vos coûts.',ads:'Vos mots-clés Apple Ads.',quality:'Gardez une app qui fonctionne.',guide:'Tous vos chiffres, expliqués.'};
 function navigate(next) {
  if(!titles[next])return;page=next;
  all('[data-page]').forEach(b=>{b.classList.toggle('active',b.dataset.page===page);b.setAttribute('aria-current',b.dataset.page===page?'page':'false');});
  all('[data-view]').forEach(s=>s.hidden=s.dataset.view!==page || !data);
  $('pageTitle').textContent=titles[page];
  if(page==='overview') requestAnimationFrame(drawGlobe);
+ if(page==='ads' && !adsBusy)void refreshAds();
 }
 function showLogin(message) {
  $('app').hidden=true;$('login').hidden=false;$('loginError').hidden=!message;$('loginError').textContent=message || '';
@@ -116,6 +117,44 @@ function render() {
  $('recent').innerHTML=data.recent.slice(0,7).map(a=>'<div class="activity-item"><span class="activity-icon '+eventKind(a)+'">'+eventGlyph(a)+'</span><div class="grow"><div style="font-size:12px;font-weight:550">'+esc(eventTitle(a))+'</div><button class="who" data-person="'+esc(a.installationId)+'">'+esc(person(a.installationId))+'</button></div><time class="tiny muted" datetime="'+esc(a.timestamp)+'">'+esc(date(a.timestamp))+'</time></div>').join('') || '<div class="empty">Les prochaines actions reçues s’afficheront ici.</div>';
  drawGlobe();
 }
+let adsData=null,adsBusy=false,adsController=null;
+const utcToday=new Date().toISOString().slice(0,10);
+$('adsEnd').value=utcToday;$('adsStart').value=new Date(Date.now()-29*86400000).toISOString().slice(0,10);
+function adsWindow(){return {start:$('adsStart').value,end:$('adsEnd').value};}
+function clearAds(){adsData=null;$('adsStats').innerHTML='';$('adsRows').innerHTML='<tr><td colspan="7"><div class="empty">Actualisez pour cette période.</div></td></tr>';$('adsExport').disabled=true;}
+async function refreshAds(){
+ if(!token||adsBusy)return;adsBusy=true;adsController=new AbortController();const controller=adsController,w=adsWindow(),requestToken=token;
+ const timeout=setTimeout(()=>controller.abort(),25000);$('adsRefresh').disabled=true;$('adsStatus').textContent='Lecture des attributions…';
+ try{const result=await getJson('/api/admin/analytics/apple-ads?start='+encodeURIComponent(w.start)+'&end='+encodeURIComponent(w.end),controller.signal);
+ if(token!==requestToken||JSON.stringify(w)!==JSON.stringify(adsWindow()))return;
+ if(!Array.isArray(result.rows))throw new Error('Format de données inattendu.');adsData=result;renderAds();
+ $('adsStatus').textContent='Du '+result.start+' au '+result.end+' inclus (UTC). '+(result.importedAt?'Rapport Apple Ads importé le '+date(result.importedAt)+'.':'Aucun rapport Apple Ads importé pour ces dates : installations, taux et coûts non disponibles.');
+ }catch(error){if(error.auth){logout();return;}if(token!==requestToken)return;clearAds();$('adsStatus').textContent=error.name==='AbortError'?'Lecture interrompue, réessayez.':error.message;}
+ finally{clearTimeout(timeout);adsBusy=false;$('adsRefresh').disabled=false;}
+}
+function adsVisibleRows(){if(!adsData)return[];const q=$('adsSearch').value.toLowerCase(),sort=$('adsSort').value;return adsData.rows.filter(r=>[r.keyword,r.campaign,r.adGroup,r.keywordId].join(' ').toLowerCase().includes(q)).sort((a,b)=>a[sort]==null?b[sort]==null?0:1:b[sort]==null?-1:sort==='costPerTrial'?a[sort]-b[sort]:b[sort]-a[sort]);}
+function adsMoney(value,currency){return value==null||!currency?'—':new Intl.NumberFormat('fr-FR',{style:'currency',currency}).format(value);}
+function renderAds(){if(!adsData)return;const total=adsData.attributedTrials+adsData.unattributedTrials;
+ $('adsStats').innerHTML=metric('Essais attribués à Apple Ads',count(adsData.attributedTrials),'Installations uniques avec essai confirmé')+metric('Essais sans attribution disponible',count(adsData.unattributedTrials),'Source inconnue, pas nécessairement organique')+metric('Couverture des essais',total?percent(adsData.attributedTrials/total):'—','Part avec attribution Apple Ads disponible')+metric('Mots-clés / groupes affichés',count(adsData.rows.length),'Inclut les lignes du rapport importé');
+ $('adsRows').innerHTML=adsVisibleRows().map(r=>'<tr><td><strong>'+esc(r.keyword)+'</strong><div class="tiny muted">'+esc(r.campaign)+' · '+esc(r.adGroup)+'</div><div class="tiny muted">ID : '+esc(r.keywordId||'non communiqué')+'</div></td><td>'+ (r.installs==null?'—':count(r.installs))+'</td><td>'+count(r.trials)+'</td><td>'+(r.trialRate==null?'—':percent(r.trialRate))+(r.sampleLow?'<div class="tiny muted">Volume insuffisant / non disponible</div>':'')+'</td><td>'+adsMoney(r.spend,r.currency)+'</td><td>'+adsMoney(r.costPerTrial,r.currency)+'</td><td>'+count(r.payingUsers)+'</td></tr>').join('')||'<tr><td colspan="7"><div class="empty">Aucun mot-clé Apple Ads reçu sur ces dates. Les essais sans attribution restent visibles dans le compteur ci-dessus.</div></td></tr>';
+ $('adsExport').disabled=!adsData.rows.length;
+}
+$('adsHistory').addEventListener('click',async()=>{
+ const button=$('adsHistory'),requestToken=token,w=adsWindow();button.disabled=true;$('adsHistoryStatus').textContent='Recherche dans RevenueCat…';const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),25000);
+ try{const response=await fetch('/api/admin/analytics/apple-ads/history',{method:'POST',headers:{'Content-Type':'application/json','x-nevi-dashboard-token':requestToken},body:JSON.stringify(w),signal:controller.signal});const r=await response.json();if(token!==requestToken)return;if(response.status===401){logout();return;}if(!response.ok)throw new Error(r.error||'Récupération impossible.');$('adsHistoryStatus').textContent=count(r.checked)+' clients vérifiés : '+count(r.recovered)+' avec attribution, '+count(r.missing)+' sans attribution disponible.'+(r.hasMore?' Cliquez de nouveau pour le lot suivant.':' Vérification terminée pour cette période (nouvel essai possible dans 24 h).');if(JSON.stringify(w)===JSON.stringify(adsWindow()))await refreshAds();}
+ catch(error){if(token===requestToken)$('adsHistoryStatus').textContent=error.name==='AbortError'?'Récupération interrompue. Vous pouvez reprendre.':error.message;}finally{clearTimeout(timeout);button.disabled=false;}
+});
+$('adsRefresh').addEventListener('click',refreshAds);
+for(const id of ['adsStart','adsEnd'])$(id).addEventListener('change',()=>{if(adsController)adsController.abort();clearAds();$('adsStatus').textContent='Période modifiée : cliquez sur Afficher.';});
+$('adsSearch').addEventListener('input',renderAds);$('adsSort').addEventListener('change',renderAds);
+$('adsTemplate').addEventListener('click',()=>csvDownload('nevi-apple-ads-modele.csv',[['campaign_id','ad_group_id','keyword_id','keyword','installs','taps','spend','currency','campaign','ad_group']]));
+$('adsExport').addEventListener('click',()=>{if(adsData)csvDownload('nevi-apple-ads-'+adsData.start+'-'+adsData.end+'.csv',[['Mot-clé','Campagne','Groupe','ID campagne','ID groupe','ID mot-clé','Installations Apple Ads','Essais attribués reçus','Ratio essais/installations','Dépenses','Devise','Coût par essai','Utilisateurs payants'],...adsVisibleRows().map(r=>[r.keyword,r.campaign,r.adGroup,r.campaignId,r.adGroupId,r.keywordId,r.installs,r.trials,r.trialRate,r.spend,r.currency,r.costPerTrial,r.payingUsers])]);});
+$('adsImport').addEventListener('click',async()=>{
+ const file=$('adsFile').files[0];if(!file){$('adsImportStatus').textContent='Choisissez un fichier CSV.';return;}if(file.size>1000000){$('adsImportStatus').textContent='Fichier trop volumineux (1 Mo maximum).';return;}
+ const w=adsWindow(),requestToken=token;const button=$('adsImport');button.disabled=true;$('adsImportStatus').textContent='Import en cours…';const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),25000);
+ try{const csv=await file.text();if(token!==requestToken)return;const response=await fetch('/api/admin/analytics/apple-ads/report',{method:'POST',headers:{'Content-Type':'application/json','x-nevi-dashboard-token':requestToken},body:JSON.stringify({...w,csv}),signal:controller.signal});const result=await response.json();if(token!==requestToken)return;if(response.status===401){logout();return;}if(!response.ok)throw new Error(result.error||'Import impossible.');$('adsImportStatus').textContent=count(result.rows)+' lignes enregistrées pour '+w.start+' → '+w.end+'.';if(JSON.stringify(w)===JSON.stringify(adsWindow()))await refreshAds();}
+ catch(error){if(token===requestToken)$('adsImportStatus').textContent=error.name==='AbortError'?'Import interrompu. Réessayez : le remplacement est idempotent.':error.message;}finally{clearTimeout(timeout);button.disabled=false;}
+});
 function renderFunnel() {
  const f=data.funnel,steps=[['introduction','Présentation','Découvre la première page'],['reminder','Rappel de l’essai','Atteint la deuxième page'],['offers','Choix de l’offre','Atteint la troisième page'],['checkout','Demande d’achat','Ouvre l’achat Apple'],['access','Accès confirmé','Essai ou abonnement actif']];
  $('funnel').innerHTML=steps.map((s,i)=>{const n=f[s[0]]||0,total=f.introduction||0,prev=i?f[steps[i-1][0]]||0:total;return '<div class="funnel-step"><div class="funnel-label">'+(i+1)+'. '+s[1]+'</div><div class="funnel-number">'+count(n)+'</div><div class="funnel-bar"><i style="width:'+ (total?Math.min(100,n/total*100):0)+'%"></i></div><p class="funnel-detail">'+(total?percent(n/total)+' de l’entrée':'Aucun parcours observé')+'</p><p class="tiny muted" style="margin-top:5px">'+(i&&prev?count(Math.max(0,prev-n))+' sans étape suivante observée':s[2])+'</p></div>';}).join('');
@@ -214,7 +253,7 @@ function csvDownload(name, rows){
 $('exportPeople').addEventListener('click',()=>csvDownload('nevi-utilisateurs-'+data.period+'j.csv',[['Installation','Première activité UTC','Dernière activité UTC','Langue','Actions reçues','Sessions identifiées','Traductions','Essais confirmés','Paiements','Ventes USD','Coût IA estimé USD','Marge estimée USD'],...visiblePeople().map(c=>[c.installationId,c.firstSeenAt,c.lastSeenAt,c.locale,c.events,c.sessions,c.translations,data.health.webhookConfigured?c.trials:'',data.health.webhookConfigured?c.charges:'',data.health.webhookConfigured?c.grossRevenueUsd:'',c.technicalCostUsd,data.health.webhookConfigured?c.estimatedMarginUsd:''])]));
 $('exportJourney').addEventListener('click',()=>{if(activeJourney)csvDownload('nevi-parcours-'+String(journeyId).replace(/[^a-zA-Z0-9_-]/g,'_')+'.csv',[['Date UTC','Installation','Session','Événement','Libellé','Propriétés techniques'],...activeJourney.events.map(e=>[e.timestamp,e.installationId,e.sessionId,e.event,eventTitle(e),JSON.stringify(e.properties)])]);});
 $('loginForm').addEventListener('submit',async event=>{event.preventDefault();token=$('accessCode').value.trim();if(!token)return;const button=$('loginForm').querySelector('button');button.disabled=true;$('loginError').hidden=true;await refresh();button.disabled=false;});
-function logout(){if(requestController)requestController.abort();token='';data=null;try{localStorage.removeItem('nevi-pulse-token');}catch(_){}$('accessCode').value='';showLogin();}
+function logout(){if(adsController)adsController.abort();clearAds();if(requestController)requestController.abort();token='';data=null;try{localStorage.removeItem('nevi-pulse-token');}catch(_){}$('accessCode').value='';showLogin();}
 $('logout').addEventListener('click',logout);$('mobileLogout').addEventListener('click',logout);
 $('refresh').addEventListener('click',refresh);
 $('period').addEventListener('change',async()=>{if(requestController&&busy)requestController.abort();while(busy)await new Promise(resolve=>setTimeout(resolve,25));closeJourney();refresh();});

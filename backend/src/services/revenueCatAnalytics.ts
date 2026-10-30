@@ -1,6 +1,8 @@
 import { recordAnalyticsEvent } from './analyticsStore';
+import { appleAdsAttributes } from './appleAdsKeywords';
 
 interface RevenueCatEvent {
+  subscriber_attributes?: unknown;
   id?: string;
   type?: string;
   app_user_id?: string;
@@ -24,7 +26,8 @@ interface RevenueCatPayload {
 
 /**
  * Stocke uniquement les métadonnées commerciales dans Nevi Pulse. Audio,
- * transcription et attributs abonnés RevenueCat sont volontairement exclus.
+ * transcription et attributs personnels RevenueCat sont volontairement exclus.
+ * Seule une liste explicite d’attributs publicitaires Apple Ads est conservée.
  */
 export async function recordRevenueCatAnalytics(
   payload: RevenueCatPayload,
@@ -38,6 +41,7 @@ export async function recordRevenueCatAnalytics(
   }
 
   await recordAnalyticsEvent(`revenuecat_${type}`, distinctId, {
+    ...appleAdsAttributes(event.subscriber_attributes),
     $insert_id: `revenuecat:${eventId}`,
     revenuecat_event_id: eventId,
     revenue_usd: event.price ?? null,

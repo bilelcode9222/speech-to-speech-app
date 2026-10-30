@@ -1,3 +1,5 @@
+import { recoverAppleAdsHistory } from './services/appleAdsHistory';
+import { loadKeywordPerformance, saveKeywordReport } from './services/appleAdsKeywords';
 import { CLIENT_ANALYTICS_EVENTS, safeAnalyticsProperties, clientEventTime } from './services/clientAnalytics';
 import http from 'http';
 import os from 'os';
@@ -78,6 +80,26 @@ app.get('/terms', (_req, res) => {
 
 app.get('/admin/analytics', (_req, res) => {
   res.type('html').send(analyticsDashboardPage());
+});
+
+app.post('/api/admin/analytics/apple-ads/history', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) { res.status(401).json({error:'Accès refusé.'}); return; }
+  try { res.json(await recoverAppleAdsHistory(req.body?.start,req.body?.end)); }
+  catch(error) {const message=error instanceof Error?error.message:'';const expected=/^(Choisissez|Configurez|RevenueCat refuse|Limite RevenueCat|Récupération RevenueCat|Réponse RevenueCat|Une récupération)/.test(message);if(!expected)logger.error('Récupération attribution indisponible');res.status(expected?400:502).json({error:expected?message:'Récupération indisponible.'});}
+});
+
+app.get('/api/admin/analytics/apple-ads', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) { res.status(401).json({error:'Accès refusé.'}); return; }
+  try { res.json(await loadKeywordPerformance(req.query.start,req.query.end)); }
+  catch(error) { const message=error instanceof Error?error.message:''; if(message.startsWith('Choisissez'))res.status(400).json({error:message}); else {logger.error('Apple Ads Pulse indisponible',error);res.status(502).json({error:'Les mots-clés ne peuvent pas être chargés.'});} }
+});
+app.post('/api/admin/analytics/apple-ads/report', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) { res.status(401).json({error:'Accès refusé.'}); return; }
+  try { res.json(await saveKeywordReport(req.body?.start,req.body?.end,req.body?.csv)); }
+  catch(error) { const message=error instanceof Error?error.message:''; if(/^(Choisissez|CSV|Utilisez|Importez|Ligne|Une seule)/.test(message))res.status(400).json({error:message}); else {logger.error('Import Apple Ads Pulse impossible',error);res.status(502).json({error:'Le rapport n’a pas pu être enregistré.'});} }
 });
 
 app.get('/api/admin/analytics/journey', async (req, res) => {
