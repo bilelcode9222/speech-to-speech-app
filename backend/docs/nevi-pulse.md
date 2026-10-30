@@ -104,3 +104,14 @@ subscriber responses are never returned or logged. Successful checks (including
 missing attribution) are cached for 24 hours. On authentication, network, or rate
 limit failure, the batch stops; completed customers remain saved and the failed
 customer is retryable. The existing purchase/activation flow is unchanged.
+
+## Dashboard load time
+
+RevenueCat-only deduplication avoids sorting every app event on each query.
+A partial index supports the RevenueCat event-ID lookup. The dashboard snapshot
+route shares in-flight work per period and caches successful snapshots for
+20 seconds after completion; failed snapshots are retryable and never cached.
+Authorization is checked before the cache on every request. The snapshot's
+original generation timestamp is retained. The browser allows 60 seconds for
+the initial data request and shows a loading label during sign-in. The HTML page
+is served with `Cache-Control: no-store` so refreshed clients receive fixes.

@@ -86,7 +86,7 @@ async function getJson(path, signal) {
 async function refresh() {
  if(busy || !token)return;busy=true;const requestingToken=token;
  $('refresh').disabled=true;$('refresh').classList.add('spin');$('connectionLabel').textContent='Actualisation…';
- requestController=new AbortController();const controller=requestController;const timeout=setTimeout(()=>controller.abort(),25000);
+ requestController=new AbortController();const controller=requestController;const timeout=setTimeout(()=>controller.abort(),60000);
  try {
   const result=await getJson('/api/admin/analytics?period='+$('period').value,controller.signal);
   if(token!==requestingToken)return;
@@ -252,7 +252,7 @@ function csvDownload(name, rows){
 }
 $('exportPeople').addEventListener('click',()=>csvDownload('nevi-utilisateurs-'+data.period+'j.csv',[['Installation','Première activité UTC','Dernière activité UTC','Langue','Actions reçues','Sessions identifiées','Traductions','Essais confirmés','Paiements','Ventes USD','Coût IA estimé USD','Marge estimée USD'],...visiblePeople().map(c=>[c.installationId,c.firstSeenAt,c.lastSeenAt,c.locale,c.events,c.sessions,c.translations,data.health.webhookConfigured?c.trials:'',data.health.webhookConfigured?c.charges:'',data.health.webhookConfigured?c.grossRevenueUsd:'',c.technicalCostUsd,data.health.webhookConfigured?c.estimatedMarginUsd:''])]));
 $('exportJourney').addEventListener('click',()=>{if(activeJourney)csvDownload('nevi-parcours-'+String(journeyId).replace(/[^a-zA-Z0-9_-]/g,'_')+'.csv',[['Date UTC','Installation','Session','Événement','Libellé','Propriétés techniques'],...activeJourney.events.map(e=>[e.timestamp,e.installationId,e.sessionId,e.event,eventTitle(e),JSON.stringify(e.properties)])]);});
-$('loginForm').addEventListener('submit',async event=>{event.preventDefault();token=$('accessCode').value.trim();if(!token)return;const button=$('loginForm').querySelector('button');button.disabled=true;$('loginError').hidden=true;await refresh();button.disabled=false;});
+$('loginForm').addEventListener('submit',async event=>{event.preventDefault();token=$('accessCode').value.trim();if(!token)return;const button=$('loginForm').querySelector('button'),label=button.innerHTML;button.disabled=true;button.textContent='Chargement des données…';$('loginError').hidden=true;try{await refresh();}finally{button.disabled=false;button.innerHTML=label;}});
 function logout(){if(adsController)adsController.abort();clearAds();if(requestController)requestController.abort();token='';data=null;try{localStorage.removeItem('nevi-pulse-token');}catch(_){}$('accessCode').value='';showLogin();}
 $('logout').addEventListener('click',logout);$('mobileLogout').addEventListener('click',logout);
 $('refresh').addEventListener('click',refresh);

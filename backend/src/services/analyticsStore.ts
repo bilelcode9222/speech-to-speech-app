@@ -45,6 +45,9 @@ async function ensureSchema(): Promise<any> {
     await db.query(
       'CREATE INDEX IF NOT EXISTS nevi_analytics_events_name_occurred_idx ON nevi_analytics_events (event_name, occurred_at DESC)'
     );
+    await db.query(`CREATE INDEX IF NOT EXISTS nevi_analytics_revenuecat_dedup_idx
+      ON nevi_analytics_events ((properties->>'revenuecat_event_id'),id)
+      WHERE event_name LIKE 'revenuecat_%' AND NULLIF(properties->>'revenuecat_event_id','') IS NOT NULL`);
     await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS nevi_analytics_client_event_idx
       ON nevi_analytics_events (installation_id, (properties->>'event_id'))
       WHERE properties ? 'event_id'`);

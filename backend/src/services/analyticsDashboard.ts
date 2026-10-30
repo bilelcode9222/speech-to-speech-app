@@ -6,10 +6,12 @@ const num = (v: unknown): number => Number.isFinite(Number(v)) ? Number(v) : 0;
 const iso = (v: unknown): string | null => v instanceof Date ? v.toISOString() : typeof v === 'string' && v ? v : null;
 // Repeated webhook deliveries must never inflate sales. No historical rows are deleted.
 const base = `WITH deduplicated AS (
- SELECT DISTINCT ON (CASE WHEN event_name LIKE 'revenuecat_%' AND NULLIF(properties->>'revenuecat_event_id','') IS NOT NULL
- THEN 'rc:' || (properties->>'revenuecat_event_id') ELSE 'row:' || id::text END) * FROM nevi_analytics_events
- ORDER BY CASE WHEN event_name LIKE 'revenuecat_%' AND NULLIF(properties->>'revenuecat_event_id','') IS NOT NULL
- THEN 'rc:' || (properties->>'revenuecat_event_id') ELSE 'row:' || id::text END, id
+ SELECT * FROM nevi_analytics_events
+ WHERE event_name NOT LIKE 'revenuecat_%' OR NULLIF(properties->>'revenuecat_event_id','') IS NULL
+ UNION ALL
+ (SELECT DISTINCT ON (properties->>'revenuecat_event_id') * FROM nevi_analytics_events
+ WHERE event_name LIKE 'revenuecat_%' AND NULLIF(properties->>'revenuecat_event_id','') IS NOT NULL
+ ORDER BY properties->>'revenuecat_event_id',id)
 ), events AS (
  SELECT *, properties->>'environment'='PRODUCTION' AS production,
  CASE WHEN COALESCE(properties->>'revenue_usd','') ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (properties->>'revenue_usd')::numeric ELSE 0 END AS revenue,

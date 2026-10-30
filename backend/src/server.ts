@@ -1,3 +1,4 @@
+import { createSnapshotLoader } from './services/analyticsSnapshotCache';
 import { recoverAppleAdsHistory } from './services/appleAdsHistory';
 import { loadKeywordPerformance, saveKeywordReport } from './services/appleAdsKeywords';
 import { CLIENT_ANALYTICS_EVENTS, safeAnalyticsProperties, clientEventTime } from './services/clientAnalytics';
@@ -79,6 +80,7 @@ app.get('/terms', (_req, res) => {
 });
 
 app.get('/admin/analytics', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.type('html').send(analyticsDashboardPage());
 });
 
@@ -111,6 +113,8 @@ app.get('/api/admin/analytics/journey', async (req, res) => {
   catch (error) { logger.error('Parcours Nevi Pulse indisponible', error); res.status(502).json({error:'Ce parcours ne peut pas être chargé pour le moment.'}); }
 });
 
+const loadDashboardSnapshot = createSnapshotLoader((period) => loadAnalyticsSnapshot(normalizePeriod(period)));
+
 app.get('/api/admin/analytics', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) {
@@ -128,7 +132,7 @@ app.get('/api/admin/analytics', async (req, res) => {
   const period: AnalyticsPeriod = normalizePeriod(req.query.period ?? req.query.days);
 
   try {
-    res.json(await loadAnalyticsSnapshot(period));
+    res.json(await loadDashboardSnapshot(period));
   } catch (error) {
     logger.error('Tableau de bord Nevi Pulse indisponible', error);
     res.status(502).json({
