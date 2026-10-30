@@ -1,3 +1,4 @@
+import { readKeywordReportFile } from './services/appleAdsReportFile';
 import { createSnapshotLoader } from './services/analyticsSnapshotCache';
 import { recoverAppleAdsHistory } from './services/appleAdsHistory';
 import { loadKeywordPerformance, saveKeywordReport } from './services/appleAdsKeywords';
@@ -100,7 +101,7 @@ app.get('/api/admin/analytics/apple-ads', async (req, res) => {
 app.post('/api/admin/analytics/apple-ads/report', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   if (!analyticsDashboardAccessAllowed(req.header('x-nevi-dashboard-token'))) { res.status(401).json({error:'Accès refusé.'}); return; }
-  try { res.json(await saveKeywordReport(req.body?.start,req.body?.end,req.body?.csv)); }
+  try { res.json(await saveKeywordReport(req.body?.start,req.body?.end,req.body?.fileBase64 !== undefined ? await readKeywordReportFile(req.body.fileBase64) : req.body?.csv)); }
   catch(error) { const message=error instanceof Error?error.message:''; if(/^(Choisissez|CSV|Utilisez|Importez|Ligne|Une seule)/.test(message))res.status(400).json({error:message}); else {logger.error('Import Apple Ads Pulse impossible',error);res.status(502).json({error:'Le rapport n’a pas pu être enregistré.'});} }
 });
 

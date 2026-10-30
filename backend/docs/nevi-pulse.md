@@ -115,3 +115,5 @@ Authorization is checked before the cache on every request. The snapshot's
 original generation timestamp is retained. The browser allows 60 seconds for
 the initial data request and shows a loading label during sign-in. The HTML page
 is served with `Cache-Control: no-store` so refreshed clients receive fixes.
+
+Les imports Apple Ads acceptent les rapports CSV et CSV.GZ directement sur iPhone. La compression gzip est détectée par le contenu, sans filtrage par extension dans le sélecteur. Les fichiers UTF-8 et UTF-16 avec BOM sont lus ; la limite de 1 Mo s’applique aussi au contenu décompressé. Les validations des colonnes, identifiants et dates restent applicables.
