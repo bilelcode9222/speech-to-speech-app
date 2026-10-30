@@ -95,3 +95,5 @@ test('native Apple keyword headers map to IDs without inventing campaigns or key
  const parsed=ads.parseAppleAdsReport(native);assert.equal(parsed.scope,'keyword');assert.equal(parsed.rows[0].keyword_id,'3');assert.equal(parsed.rows[0].currency,'EUR');
  await ads.saveKeywordReport('2026-10-01','2026-10-30',native);const result=await ads.loadKeywordPerformance('2026-10-01','2026-10-30');assert.equal(result.rows.length,1);assert.equal(result.rows[0].installs,20);assert.equal(result.campaignRows.length,0);
 });
+
+test('keyword export reads campaign identity from Apple preamble and ignores total',()=>{const text='Campaign: Italy (ID: 1)\nAd Group: Exact (ID: 2)\n'+nativePreamble+'Keyword ID,Keyword,Ad Group ID,Ad Group Name,Spend,Taps,Installs (Total)\n3,translator,2,Exact,12.50,40,20\n,,,,12.50,40,20';const r=ads.parseAppleAdsReport(text);assert.equal(r.scope,'keyword');assert.equal(r.rows.length,1);assert.equal(r.rows[0].campaign_id,'1');assert.equal(r.rows[0].campaign,'Italy');});

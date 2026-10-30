@@ -70,7 +70,7 @@ export function parseAppleAdsReport(csv: unknown) {
   if(typeof csv!=='string'||csv.length>1_000_000)throw new Error('CSV absent ou trop volumineux (1 Mo maximum).');
   const records=csvRecords(csv.replace(/^\uFEFF/,''));
   const canonical=(s:string)=>s.trim().toLowerCase().replace(/[^a-z0-9]/g,'');
-  const headerIndex=records.findIndex(row=>row.some(v=>canonical(v)==='campaignid')&&row.some(v=>canonical(v)==='spend'));
+  const headerIndex=records.findIndex(row=>row.some(v=>['campaignid','keywordid'].includes(canonical(v)))&&row.some(v=>canonical(v)==='spend'));
   if(headerIndex<0 || records[headerIndex].some(v=>v.trim()==='campaign_id'))return {scope:'keyword' as const,rows:parseKeywordReport(csv),start:null,end:null,timeZone:null};
   const headers=records[headerIndex].map(canonical);
   if(new Set(headers).size!==headers.length)throw new Error('CSV : colonnes dupliquées.');
@@ -82,7 +82,8 @@ export function parseAppleAdsReport(csv: unknown) {
   if(!start||!end||timeZone!=='UTC')throw new Error('CSV : exportez le rapport Apple Ads avec ses dates et le fuseau UTC.');
   const keyword=headers.includes('keywordid');
   const scope=keyword?'keyword' as const:'campaign' as const;
-  const required=['campaignid','campaignname','spend','taps'];
+  const campaignMeta=meta('Campaign')?.match(/^(.*?)\s*\(ID:\s*(\d+)\)$/);
+  const required=campaignMeta?['spend','taps']:['campaignid','campaignname','spend','taps'];
   if(!headers.includes('installstotal')&&!headers.includes('installs'))throw new Error('CSV : colonne Installs (Total) manquante.');
   if(required.some(k=>!headers.includes(k))||(keyword&&['adgroupid','keyword'].some(k=>!headers.includes(k))))throw new Error('CSV : colonnes Apple Ads manquantes (identifiants, noms ou dépenses).');
   const data=records.slice(headerIndex+1).filter(row=>row.some(v=>v.trim()));
@@ -92,6 +93,7 @@ export function parseAppleAdsReport(csv: unknown) {
     if(values.length!==headers.length)throw new Error('CSV : nombre de colonnes invalide dans le rapport Apple Ads.');
     const r=Object.fromEntries(headers.map((h,i)=>[h,values[i].trim()]));
     if(!r.campaignid&&!r.keywordid&&!r.adgroupid)continue;
+    if(!r.campaignid&&campaignMeta){r.campaignid=campaignMeta[2];r.campaignname=campaignMeta[1];}
     const installs=r.installstotal??r.installs;
     if(keyword){
       const h=['campaign_id','ad_group_id','keyword_id','keyword','installs','taps','spend','currency','campaign','ad_group'];
