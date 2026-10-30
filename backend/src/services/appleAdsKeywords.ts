@@ -64,19 +64,68 @@ export function parseKeywordReport(csv: unknown): KeywordReportRow[] {
     return {campaign_id:row.campaign_id,ad_group_id:row.ad_group_id,keyword_id:row.keyword_id,keyword:row.keyword,campaign:(row.campaign||'').slice(0,200),ad_group:(row.ad_group||'').slice(0,200),installs:Number(row.installs),taps:Number(row.taps),spend:Number(row.spend),currency:row.currency};
   });
 }
+export type CampaignReportRow = {campaign_id:string;campaign:string;installs:number;taps:number;spend:number;currency:string};
+/** Apple exports include a metadata preamble and a grand total. */
+export function parseAppleAdsReport(csv: unknown) {
+  if(typeof csv!=='string'||csv.length>1_000_000)throw new Error('CSV absent ou trop volumineux (1 Mo maximum).');
+  const records=csvRecords(csv.replace(/^\uFEFF/,''));
+  const canonical=(s:string)=>s.trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+  const headerIndex=records.findIndex(row=>row.some(v=>canonical(v)==='campaignid')&&row.some(v=>canonical(v)==='spend'));
+  if(headerIndex<0 || records[headerIndex].some(v=>v.trim()==='campaign_id'))return {scope:'keyword' as const,rows:parseKeywordReport(csv),start:null,end:null,timeZone:null};
+  const headers=records[headerIndex].map(canonical);
+  if(new Set(headers).size!==headers.length)throw new Error('CSV : colonnes dupliquées.');
+  const metadata=records.slice(0,headerIndex).map(r=>r.join(',')).join('\n');
+  const meta=(name:string)=>metadata.split('\n').find(v=>v.toLowerCase().startsWith(name.toLowerCase()+':'))?.slice(name.length+1).trim();
+  const iso=(value:string|undefined)=>{const n=value?Date.parse(value+' UTC'):NaN;return Number.isFinite(n)?new Date(n).toISOString().slice(0,10):null;};
+  const currency=meta('Currency')||'';
+  const start=iso(meta('Start Date')),end=iso(meta('End Date')),timeZone=meta('Time Zone');
+  if(!start||!end||timeZone!=='UTC')throw new Error('CSV : exportez le rapport Apple Ads avec ses dates et le fuseau UTC.');
+  const keyword=headers.includes('keywordid');
+  const scope=keyword?'keyword' as const:'campaign' as const;
+  const required=['campaignid','campaignname','spend','taps'];
+  if(!headers.includes('installstotal')&&!headers.includes('installs'))throw new Error('CSV : colonne Installs (Total) manquante.');
+  if(required.some(k=>!headers.includes(k))||(keyword&&['adgroupid','keyword'].some(k=>!headers.includes(k))))throw new Error('CSV : colonnes Apple Ads manquantes (identifiants, noms ou dépenses).');
+  const data=records.slice(headerIndex+1).filter(row=>row.some(v=>v.trim()));
+  const rows:CampaignReportRow[]=[];const keywordRows:KeywordReportRow[]=[];const ids=new Set<string>();
+  const encode=(v:unknown)=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  for(const values of data){
+    if(values.length!==headers.length)throw new Error('CSV : nombre de colonnes invalide dans le rapport Apple Ads.');
+    const r=Object.fromEntries(headers.map((h,i)=>[h,values[i].trim()]));
+    if(!r.campaignid&&!r.keywordid&&!r.adgroupid)continue;
+    const installs=r.installstotal??r.installs;
+    if(keyword){
+      const h=['campaign_id','ad_group_id','keyword_id','keyword','installs','taps','spend','currency','campaign','ad_group'];
+      const v=[r.campaignid,r.adgroupid,r.keywordid,r.keyword,installs,r.taps,r.spend,currency,r.campaignname,r.adgroupname||''];
+      keywordRows.push(...parseKeywordReport(h.join(',')+'\n'+v.map(encode).join(',')));
+    }else{
+      // Reuse strict numeric/currency validation without storing a fictional keyword.
+      parseKeywordReport('campaign_id,ad_group_id,keyword_id,keyword,installs,taps,spend,currency\n'+[r.campaignid,'0','0','validation',installs,r.taps,r.spend,currency].map(encode).join(','));
+      rows.push({campaign_id:r.campaignid,campaign:r.campaignname.slice(0,200),installs:Number(installs),taps:Number(r.taps),spend:Number(r.spend),currency});
+    }
+    const id=keyword?[r.campaignid,r.adgroupid,r.keywordid].join(':'):r.campaignid;
+    if(ids.has(id))throw new Error('CSV : plusieurs lignes pour le même identifiant ; exportez les totaux de la période, tous pays agrégés.');ids.add(id);
+  }
+  if(!ids.size||ids.size>2000)throw new Error('Importez entre 1 et 2 000 lignes.');
+  return scope==='keyword'?{scope,rows:keywordRows,start,end,timeZone}:{scope,rows,start,end,timeZone};
+}
+
 export async function ensureReports() {
   await queryAnalytics(`CREATE TABLE IF NOT EXISTS nevi_apple_ads_attribution (installation_id TEXT PRIMARY KEY,properties JSONB NOT NULL DEFAULT '{}'::jsonb,checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,[]);
+  await queryAnalytics(`CREATE TABLE IF NOT EXISTS nevi_apple_ads_campaign_reports (start_date DATE NOT NULL,end_date DATE NOT NULL,rows JSONB NOT NULL,imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(start_date,end_date))`,[]);
   await queryAnalytics(`CREATE TABLE IF NOT EXISTS nevi_apple_ads_reports (start_date DATE NOT NULL,end_date DATE NOT NULL,rows JSONB NOT NULL,imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(start_date,end_date))`,[]);
 }
 export async function saveKeywordReport(start: unknown,end: unknown,csv: unknown) {
-  const window=reportWindow(start,end),rows=parseKeywordReport(csv);await ensureReports();
-  await queryAnalytics(`INSERT INTO nevi_apple_ads_reports (start_date,end_date,rows) VALUES ($1,$2,$3::jsonb) ON CONFLICT(start_date,end_date) DO UPDATE SET rows=EXCLUDED.rows,imported_at=NOW()`,[window.start,window.end,JSON.stringify(rows)]);
-  return {rows:rows.length,...window};
+  const window=reportWindow(start,end),report=parseAppleAdsReport(csv);
+  if(report.start&&(report.start!==window.start||report.end!==window.end))throw new Error(`CSV : ce rapport couvre le ${report.start} au ${report.end}. Sélectionnez ces mêmes dates dans Pulse.`);
+  await ensureReports();
+  const table=report.scope==='campaign'?'nevi_apple_ads_campaign_reports':'nevi_apple_ads_reports';
+  await queryAnalytics(`INSERT INTO ${table} (start_date,end_date,rows) VALUES ($1,$2,$3::jsonb) ON CONFLICT(start_date,end_date) DO UPDATE SET rows=EXCLUDED.rows,imported_at=NOW()`,[window.start,window.end,JSON.stringify(report.rows)]);
+  return {rows:report.rows.length,scope:report.scope,...window};
 }
 const keyOf=(r:Row) => r.campaign_id && r.ad_group_id && r.keyword_id ? `id:${r.campaign_id}:${r.ad_group_id}:${r.keyword_id}` : JSON.stringify(['name',r.campaign||'',r.ad_group||'',r.keyword||'']);
 export async function loadKeywordPerformance(start: unknown,end: unknown) {
   const window=reportWindow(start,end);await ensureReports();
-  const [events,reports]=await Promise.all([
+  const [events,reports,campaignReports]=await Promise.all([
     queryAnalytics<Row>(`WITH dedup AS (
       SELECT DISTINCT ON(properties->>'revenuecat_event_id') * FROM nevi_analytics_events
       WHERE event_name LIKE 'revenuecat_%' AND properties->>'environment'='PRODUCTION' AND NULLIF(properties->>'revenuecat_event_id','') IS NOT NULL
@@ -90,6 +139,7 @@ export async function loadKeywordPerformance(start: unknown,end: unknown) {
       WHERE d.occurred_at>=($1::date::timestamp AT TIME ZONE 'UTC') AND d.occurred_at<(($2::date+INTERVAL '1 day') AT TIME ZONE 'UTC')
       AND d.event_name IN ('revenuecat_initial_purchase','revenuecat_renewal','revenuecat_non_renewing_purchase')`,[window.start,window.end]),
     queryAnalytics<Row>('SELECT rows,imported_at FROM nevi_apple_ads_reports WHERE start_date=$1 AND end_date=$2',[window.start,window.end]),
+    queryAnalytics<Row>('SELECT rows,imported_at FROM nevi_apple_ads_campaign_reports WHERE start_date=$1 AND end_date=$2',[window.start,window.end]),
   ]);
   const grouped=new Map<string,any>();const unattributed=new Set<string>(),attributed=new Set<string>();
   const create=(r:Row): {campaignId:string|null;adGroupId:string|null;keywordId:string|null;keyword:string;campaign:string;adGroup:string;trialIds:Set<string>;paidIds:Set<string>;revenueUsd:number;report:KeywordReportRow|null}=>({campaignId:r.campaign_id||null,adGroupId:r.ad_group_id||null,keywordId:r.keyword_id||null,keyword:r.keyword||'Mot-clé non communiqué (Search Match possible)',campaign:r.campaign||'Campagne non communiquée',adGroup:r.ad_group||'Groupe non communiqué',trialIds:new Set<string>(),paidIds:new Set<string>(),revenueUsd:0,report:null});
@@ -103,7 +153,15 @@ export async function loadKeywordPerformance(start: unknown,end: unknown) {
     if(trial)item.trialIds.add(e.installation_id);
     else {const amount=Number(e.properties.revenue_usd);if(Number.isFinite(amount)&&amount>0){item.paidIds.add(e.installation_id);item.revenueUsd+=amount;}}
   }
-  return {...window,importedAt:reports[0]?.imported_at||null,attributedTrials:attributed.size,unattributedTrials:unattributed.size,
+  const campaignRows=((campaignReports[0]?.rows||[]) as CampaignReportRow[]).map(r=>{
+    const trials=new Set<string>(),paid=new Set<string>();
+    for(const e of events){if(e.ads?.ads_campaign_id!==r.campaign_id)continue;
+      if(e.event_name==='revenuecat_initial_purchase'&&e.properties.period_type==='TRIAL')trials.add(e.installation_id);
+      else if(Number(e.properties.revenue_usd)>0)paid.add(e.installation_id);
+    }
+    return {...r,trials:trials.size,payingUsers:paid.size,trialRate:r.installs>0?trials.size/r.installs:null,costPerTrial:trials.size?r.spend/trials.size:null};
+  });
+  return {...window,campaignImportedAt:campaignReports[0]?.imported_at||null,campaignRows,importedAt:reports[0]?.imported_at||null,attributedTrials:attributed.size,unattributedTrials:unattributed.size,
     rows:[...grouped.values()].map(r=>({campaignId:r.campaignId,adGroupId:r.adGroupId,keywordId:r.keywordId,keyword:r.keyword,campaign:r.campaign,adGroup:r.adGroup,trials:r.trialIds.size,payingUsers:r.paidIds.size,revenueUsd:r.revenueUsd,
       installs:r.report?.installs??null,taps:r.report?.taps??null,spend:r.report?.spend??null,currency:r.report?.currency??null,
       trialRate:r.report?.installs>0?r.trialIds.size/r.report.installs:null,costPerTrial:r.report&&r.trialIds.size?r.report.spend/r.trialIds.size:null,

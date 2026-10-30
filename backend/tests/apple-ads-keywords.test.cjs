@@ -9,7 +9,7 @@ const attr={ads_media_source:'Apple Ads',ads_campaign_id:'1',ads_ad_group_id:'2'
 async function event(user,id,props={},name='revenuecat_initial_purchase',at='2026-10-20T12:00:00Z'){await db.query('INSERT INTO nevi_analytics_events(installation_id,event_name,properties,occurred_at) VALUES($1,$2,$3::jsonb,$4)',[user,name,JSON.stringify({environment:'PRODUCTION',period_type:'TRIAL',revenuecat_event_id:id,...props}),at]);}
 before(async()=>{db=new PGlite();await db.exec('CREATE TABLE nevi_analytics_events(id BIGSERIAL PRIMARY KEY,installation_id TEXT,event_name TEXT,properties JSONB,occurred_at TIMESTAMPTZ)');ads=load('services/appleAdsKeywords.ts',{'./analyticsStore':{queryAnalytics:async(sql,args)=>(await db.query(sql,args)).rows}});});
 after(()=>db.close());
-beforeEach(async()=>{await db.exec('TRUNCATE nevi_analytics_events');await db.exec('DROP TABLE IF EXISTS nevi_apple_ads_reports');await db.exec('DROP TABLE IF EXISTS nevi_apple_ads_attribution');});
+beforeEach(async()=>{await db.exec('TRUNCATE nevi_analytics_events');await db.exec('DROP TABLE IF EXISTS nevi_apple_ads_reports');await db.exec('DROP TABLE IF EXISTS nevi_apple_ads_campaign_reports');await db.exec('DROP TABLE IF EXISTS nevi_apple_ads_attribution');});
 test('stores only whitelisted Apple Ads attributes; never private or other network attributes',()=>{
 const a=ads.appleAdsAttributes({'$mediaSource':{value:'Apple Search Ads'},'$keyword':{value:'voice translator'},'$appleAdsKeywordId':{value:'3'},'$email':{value:'private@example.com'},secret:{value:'private'}});
 assert.equal(a.ads_media_source,'Apple Ads');assert.equal(a.ads_keyword,'voice translator');assert.equal(a.ads_keyword_id,'3');assert.equal(Object.keys(a).length,3);
@@ -75,4 +75,23 @@ const axios={get:async()=>{throw {response:{status:403}}},isAxiosError:()=>true}
 const history=load('services/appleAdsHistory.ts',{'axios':axios,'../config/env':{config:{revenueCat:{apiKey:'test-secret'}}},'./analyticsStore':{queryAnalytics:async(sql,args)=>(await db.query(sql,args)).rows},'./appleAdsKeywords':ads});
 await assert.rejects(history.recoverAppleAdsHistory('2026-10-20','2026-10-20'),/RevenueCat refuse/);
 assert.equal((await db.query('SELECT COUNT(*) n FROM nevi_apple_ads_attribution')).rows[0].n,0);
+});
+
+const nativePreamble='"Start Date: Oct 01, 2026"\n"End Date: Oct 30, 2026"\nCurrency: EUR\nTime Zone: UTC\n""\n\n';
+const nativeCampaign=nativePreamble+'Campaign ID,Campaign Name,Spend,Taps,Installs (Total)\n1,"Voice, US",12.50,40,20\n4,France,7.50,10,5\n,,20.00,50,25';
+test('native Apple campaigns import metadata and ignore grand total; campaign and keyword reports coexist',async()=>{
+ const parsed=ads.parseAppleAdsReport(nativeCampaign);assert.equal(parsed.scope,'campaign');assert.equal(parsed.rows.length,2);assert.equal(parsed.rows.reduce((n,r)=>n+r.spend,0),20);assert.equal(parsed.start,'2026-10-01');
+ await ads.saveKeywordReport('2026-10-01','2026-10-30',csv);
+ await ads.saveKeywordReport('2026-10-01','2026-10-30',nativeCampaign);
+ await event('one','a',attr);await event('one','a',attr);await event('two','b',{...attr,ads_keyword_id:'99'});await event('unknown','c');
+ const result=await ads.loadKeywordPerformance('2026-10-01','2026-10-30');
+ assert.equal(result.campaignRows.length,2);assert.equal(result.campaignRows[0].trials,2);assert.equal(result.campaignRows[0].costPerTrial,6.25);assert.equal(result.campaignRows[0].trialRate,.1);assert.equal(result.campaignRows[1].trials,0);assert.equal(result.unattributedTrials,1);assert.equal(result.rows[0].installs,20);
+ await assert.rejects(ads.saveKeywordReport('2026-10-02','2026-10-30',nativeCampaign),/mêmes dates/);
+ assert.throws(()=>ads.parseAppleAdsReport(nativeCampaign.replace('UTC','Europe/Paris')),/UTC/);
+ assert.throws(()=>ads.parseAppleAdsReport(nativeCampaign+'\n1,Duplicate,1,2,3'),/plusieurs lignes/);
+});
+test('native Apple keyword headers map to IDs without inventing campaigns or keywords',async()=>{
+ const native=nativePreamble+'Campaign ID,Campaign Name,Ad Group ID,Ad Group Name,Keyword ID,Keyword,Spend,Taps,Installs (Total)\n1,US,2,Exact,3,"voice, translator",12.50,40,20\n,,,,,,12.50,40,20';
+ const parsed=ads.parseAppleAdsReport(native);assert.equal(parsed.scope,'keyword');assert.equal(parsed.rows[0].keyword_id,'3');assert.equal(parsed.rows[0].currency,'EUR');
+ await ads.saveKeywordReport('2026-10-01','2026-10-30',native);const result=await ads.loadKeywordPerformance('2026-10-01','2026-10-30');assert.equal(result.rows.length,1);assert.equal(result.rows[0].installs,20);assert.equal(result.campaignRows.length,0);
 });

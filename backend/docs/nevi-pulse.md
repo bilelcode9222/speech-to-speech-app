@@ -117,3 +117,5 @@ the initial data request and shows a loading label during sign-in. The HTML page
 is served with `Cache-Control: no-store` so refreshed clients receive fixes.
 
 Les imports Apple Ads acceptent les rapports CSV et CSV.GZ directement sur iPhone. La compression gzip est détectée par le contenu, sans filtrage par extension dans le sélecteur. Les fichiers UTF-8 et UTF-16 avec BOM sont lus ; la limite de 1 Mo s’applique aussi au contenu décompressé. Les validations des colonnes, identifiants et dates restent applicables.
+
+Les exports Apple Ads natifs en anglais sont reconnus avec leur préambule (dates, devise, fuseau UTC) et leur ligne de total ignorée. Les rapports de campagnes sont conservés dans une table distincte et affichés par campagne ; ils ne donnent aucun mot-clé. Le rattachement des essais utilise uniquement l’identifiant de campagne fourni par RevenueCat. Les dates sélectionnées doivent correspondre exactement aux dates du fichier. Les exports natifs de mots-clés avec Campaign ID, Ad Group ID, Keyword ID et Keyword sont aussi reconnus.
