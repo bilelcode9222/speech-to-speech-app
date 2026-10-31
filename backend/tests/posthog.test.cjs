@@ -12,6 +12,7 @@ function setup(env = { NODE_ENV: 'production' }, fail = false) {
     on() {}
     capture(event) { if (fail) throw Error('offline'); sent.push(event); }
     async shutdown() { this.stopped = true; }
+    async flush() { this.flushed = true; }
   }
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(__dirname + '/../src/services/posthog.ts', 'utf8'), {
@@ -76,6 +77,18 @@ function loadBridge(file, mocks) {
   vm.runInNewContext(code, { exports, require: id => { if (!(id in mocks)) throw Error(id); return mocks[id]; }, Date });
   return exports;
 }
+
+test('deployment heartbeat uses a server identity without creating a customer profile and flushes immediately', () => {
+  const h = setup();
+  h.api.startPostHog();
+  assert.equal(h.sent[0].event, 'backend_started');
+  assert.equal(h.sent[0].distinctId, 'nevi_backend');
+  assert.equal(h.sent[0].properties.$process_person_profile, false);
+  assert.equal(h.clients[0].flushed, true);
+  const disabled = setup({ NODE_ENV: 'development' });
+  disabled.api.startPostHog();
+  assert.equal(disabled.sent.length, 0);
+});
 
 test('translation metrics reach PostHog even when the internal analytics database is unavailable', async () => {
   const forwarded = [];

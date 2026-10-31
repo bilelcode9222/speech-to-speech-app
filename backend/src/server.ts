@@ -44,7 +44,7 @@ import { analyticsDashboardPage } from './admin/analyticsDashboardPage';
 import { recordRevenueCatAnalytics } from './services/revenueCatAnalytics';
 import { recordTranslationCost } from './services/unitEconomics';
 import { recordAnalyticsEvent } from './services/analyticsStore';
-import { shutdownPostHog } from './services/posthog';
+import { shutdownPostHog, startPostHog } from './services/posthog';
 
 const app = express();
 
@@ -284,6 +284,7 @@ io.use(requireAnonymousSocketSession);
 registerTranslationSocket(io);
 
 server.listen(config.port, '0.0.0.0', () => {
+  startPostHog();
   logger.success(`Serveur démarré sur le port ${config.port}`);
   logger.info(`Local     : http://localhost:${config.port}/health`);
   for (const address of localAddresses()) {

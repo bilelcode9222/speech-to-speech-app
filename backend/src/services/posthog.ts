@@ -60,3 +60,19 @@ export function capturePostHogServerEvent(event: string, installationId: string,
 export async function shutdownPostHog(): Promise<void> {
   try { await client?.shutdown(5000); } catch { /* Best effort on shutdown. */ }
 }
+
+/** Operational heartbeat for each deployment, separate from customer activity. */
+export function startPostHog(): void {
+  try {
+    const posthog = getClient();
+    if (!posthog) return;
+    posthog.capture({
+      distinctId: 'nevi_backend', event: 'backend_started',
+      properties: {
+        $process_person_profile: false, environment: process.env.NODE_ENV || 'development',
+        source: 'nevi_backend', analytics_schema_version: 1,
+      },
+    });
+    void posthog.flush().catch(() => {});
+  } catch { /* Deployment health must never depend on analytics. */ }
+}
