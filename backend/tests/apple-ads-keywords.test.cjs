@@ -55,7 +55,7 @@ await ads.saveKeywordReport('2026-10-20','2026-10-20',csv.replace('20,40','0,0')
 const r=await ads.loadKeywordPerformance('2026-10-20','2026-10-20');assert.equal(r.attributedTrials,1);assert.equal(r.rows[0].trialRate,null);assert.equal(r.rows[0].sampleLow,true);await db.exec("SET TIME ZONE 'UTC'");
 });
 test('webhook integration retains advertising fields but never arbitrary subscriber attributes',async()=>{
-let stored;const ingest=load('services/revenueCatAnalytics.ts',{'./analyticsStore':{recordAnalyticsEvent:async(...args)=>{stored=args}},'./appleAdsKeywords':ads});
+let stored;const ingest=load('services/revenueCatAnalytics.ts',{'./analyticsStore':{recordAnalyticsEvent:async(...args)=>{stored=args}},'./appleAdsKeywords':ads,'./posthog':{capturePostHogServerEvent(){}}});
 await ingest.recordRevenueCatAnalytics({event:{id:'webhook',type:'INITIAL_PURCHASE',app_user_id:'one',environment:'PRODUCTION',period_type:'TRIAL',subscriber_attributes:{'$mediaSource':{value:'Apple Search Ads'},'$keyword':{value:'translate'},'$email':{value:'private@example.com'}}}});
 assert.equal(stored[2].ads_keyword,'translate');assert.equal(stored[2].subscriber_attributes,undefined);assert.equal(JSON.stringify(stored).includes('private@example.com'),false);
 });

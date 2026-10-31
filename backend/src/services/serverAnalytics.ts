@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger';
 import { recordAnalyticsEvent } from './analyticsStore';
+import { capturePostHogServerEvent } from './posthog';
 
 /**
  * Événements purement serveur : l'identifiant reste pseudonyme et les
@@ -11,6 +12,7 @@ export async function captureServerAnalytics(
   properties: Record<string, string | number | boolean | null | undefined>,
   timestamp?: string,
 ): Promise<void> {
+  capturePostHogServerEvent(event, installationId, properties, timestamp);
   try {
     await recordAnalyticsEvent(event, installationId, properties, timestamp);
   } catch (error) {

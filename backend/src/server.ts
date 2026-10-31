@@ -44,6 +44,7 @@ import { analyticsDashboardPage } from './admin/analyticsDashboardPage';
 import { recordRevenueCatAnalytics } from './services/revenueCatAnalytics';
 import { recordTranslationCost } from './services/unitEconomics';
 import { recordAnalyticsEvent } from './services/analyticsStore';
+import { shutdownPostHog } from './services/posthog';
 
 const app = express();
 
@@ -321,3 +322,11 @@ function secretMatches(
 process.on('unhandledRejection', (reason) => {
   logger.error('Promesse rejetée non gérée', reason);
 });
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    server.close();
+    io.close();
+    void shutdownPostHog().finally(() => process.exit(0));
+  });
+}

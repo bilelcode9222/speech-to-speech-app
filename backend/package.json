@@ -25,6 +25,7 @@
     "groq-sdk": "^1.6.0",
     "onnxruntime-node": "1.30.0",
     "pg": "^8.23.0",
+    "posthog-node": "5.61.1",
     "socket.io": "^4.8.3",
     "ws": "^8.21.3"
   },

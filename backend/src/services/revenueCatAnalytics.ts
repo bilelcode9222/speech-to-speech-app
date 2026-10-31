@@ -1,4 +1,5 @@
 import { recordAnalyticsEvent } from './analyticsStore';
+import { capturePostHogServerEvent } from './posthog';
 import { appleAdsAttributes } from './appleAdsKeywords';
 
 interface RevenueCatEvent {
@@ -40,7 +41,7 @@ export async function recordRevenueCatAnalytics(
     throw new Error('Webhook RevenueCat incomplet.');
   }
 
-  await recordAnalyticsEvent(`revenuecat_${type}`, distinctId, {
+  const properties = {
     ...appleAdsAttributes(event.subscriber_attributes),
     $insert_id: `revenuecat:${eventId}`,
     revenuecat_event_id: eventId,
@@ -55,5 +56,8 @@ export async function recordRevenueCatAnalytics(
     is_trial_conversion: event.is_trial_conversion ?? false,
     cancel_reason: event.cancel_reason ?? null,
     expiration_reason: event.expiration_reason ?? null,
-  }, event.event_timestamp_ms ? new Date(event.event_timestamp_ms).toISOString() : undefined);
+  };
+  const timestamp = event.event_timestamp_ms ? new Date(event.event_timestamp_ms).toISOString() : undefined;
+  await recordAnalyticsEvent(`revenuecat_${type}`, distinctId, properties, timestamp);
+  capturePostHogServerEvent(`revenuecat_${type}`, distinctId, properties, timestamp);
 }
