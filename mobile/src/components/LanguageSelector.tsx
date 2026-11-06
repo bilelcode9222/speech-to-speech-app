@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePostHog } from 'posthog-react-native';
 import {
   canBeTarget,
   findLanguage,
@@ -40,7 +41,16 @@ export function LanguageSelector({
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const posthog = usePostHog();
   const [picking, setPicking] = useState<'source' | 'target' | null>(null);
+
+  // Le sélecteur est une modale locale : on envoie la vue à la main quand
+  // elle s'ouvre, avec le côté choisi.
+  useEffect(() => {
+    if (picking) {
+      posthog.screen('LanguagePicker', { side: picking });
+    }
+  }, [picking, posthog]);
 
   const sourceLanguages = useMemo(
     () => [AUTO_LANGUAGE, ...SUPPORTED_LANGUAGES],

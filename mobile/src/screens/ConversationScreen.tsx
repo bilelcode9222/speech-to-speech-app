@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { setAudioModeAsync } from 'expo-audio';
+import { usePostHog } from 'posthog-react-native';
 
 import { FaceToFaceView } from '../components/FaceToFaceView';
 import { LanguageSelector } from '../components/LanguageSelector';
@@ -44,6 +45,7 @@ export function ConversationScreen() {
   const { t } = useTranslation();
   const { colors, name: themeName, toggle } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const posthog = usePostHog();
 
   const recorder = useRecorder();
   const [recordingSide, setRecordingSide] = useState<Side | null>(null);
@@ -168,6 +170,12 @@ export function ConversationScreen() {
       setFreeTranslationCount(count);
     })();
   }, [exchanges, freeTranslationCount, isPremium]);
+
+  // Pas de librairie de navigation : on envoie la vue à la main à chaque
+  // bascule entre l'écran conversation et le face-à-face.
+  useEffect(() => {
+    posthog.screen(faceToFace ? 'FaceToFace' : 'Conversation');
+  }, [faceToFace, posthog]);
 
   const isRecording = recordingSide !== null;
 
